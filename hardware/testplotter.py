@@ -28,8 +28,8 @@ WORKSPACE = Bounds(
 
 # Rail travel limits (slider Y bounds, mm)
 RAIL_LIMITS = RailLimits(
-    y_left_min  = 0.0,  y_left_max  = 265,
-    y_right_min = 0.0,  y_right_max = 265
+    y_left_min  = 0.0,  y_left_max  = 270,
+    y_right_min = 0.0,  y_right_max = 270
 )
 
 # UI tuning
