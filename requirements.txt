@@ -1,10 +1,8 @@
-pyserial
-requests>=2.28.0
-pygame>=2.1.0
-matplotlib
-torch>=2.0.0
-torchaudio>=2.0.0
-# TTS>=0.22.0
+# Core dependencies for working functionality
+pyserial>=3.5          # For plotter serial communication (gcode_serial.py)
+pygame>=2.1.0          # For audio playback (bob_ross_simple_tts.py)
+matplotlib>=3.0.0      # For plotter visualization (testplotter.py)
+cohere>=4.0.0          # For AI text transformation (bob_ross_cohere.py)
 transformers>=4.30.0
 soundfile>=0.12.1
 numpy>=1.21.0
