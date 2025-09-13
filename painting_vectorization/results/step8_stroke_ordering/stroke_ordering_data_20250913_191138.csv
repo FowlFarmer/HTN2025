@@ -1,5 +1,0 @@
-stroke_id,element_id,phase,warmth,warmth_name,length_mm,duration_s,speed_mm_s,curvature_avg,start_x,start_y,end_x,end_y,is_closed_loop,point_count,order_index
-0,0,boundary,0,warm,10.0,1.0,10.0,1.0,10.0,10.0,15.0,15.0,False,3,0
-2,1,boundary,1,cool,20.0,2.2,10.0,1.0,50.0,50.0,50.0,50.0,True,5,2
-1,0,internal,0,warm,7.1,0.3535533905932738,20.0,0.0,20.0,20.0,25.0,25.0,False,2,1
-3,1,detail,1,cool,1.0,0.05,20.0,0.0,52.5,52.5,52.5,53.5,False,2,3
