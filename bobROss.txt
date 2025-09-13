@@ -1,0 +1,8 @@
+https://huggingface.co/drewThomasson/Xtts-FineTune-Bob-Ross
+
+python -c "
+from bob_ross_simple_tts import BobRossTTS
+tts = BobRossTTS()
+text = 'Your text here'
+tts.text_to_speech_and_play(text)
+"
