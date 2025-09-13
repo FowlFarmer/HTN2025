@@ -1,7 +1,5 @@
 venv
 .env
 .venv
-
-# SAM Model files (large files, download separately)
 painting_vectorization/models/*.pth
 *.pth
