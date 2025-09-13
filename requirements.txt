@@ -1,2 +1,6 @@
 pyserial
 matplotlib
+genai
+opencv-python 
+numpy 
+python-dotenv
