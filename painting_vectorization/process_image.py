@@ -2,7 +2,7 @@
 """
 Painting Vectorization - Image Processor
 
-Process any image through the complete pipeline (Steps 1-3) and display results.
+Process any image through the complete pipeline (Steps 1-4) and display results.
 
 Usage:
     python process_image.py                    # Interactive mode - choose from examples
@@ -25,6 +25,7 @@ sys.path.append(str(project_root))
 from step1_preprocessing.image_preprocessing import preprocess_image
 from step2_segmentation.segmentation import segment_painting, save_segmentation_results
 from step3_edge_extraction.edge_extraction import process_all_masks, save_edge_results
+from step4_stroke_graph.stroke_graph import process_all_stroke_graphs, save_graph_visualization
 
 def find_images_in_examples():
     """Find all image files in examples directory"""
@@ -42,19 +43,21 @@ def find_images_in_examples():
     return sorted(images)
 
 def find_recent_results():
-    """Find recent segmentation and edge extraction results"""
+    """Find recent segmentation, edge extraction, and stroke graph results"""
     examples_dir = Path("examples")
     if not examples_dir.exists():
-        return [], []
+        return [], [], []
 
     segmentation_results = list(examples_dir.glob("segmentation_results_*.png"))
     edge_results = list(examples_dir.glob("edge_extraction_results_*.png"))
+    stroke_graph_results = list(examples_dir.glob("stroke_graph_results_*.png"))
 
     # Sort by timestamp in filename
     segmentation_results.sort(key=lambda x: x.name, reverse=True)
     edge_results.sort(key=lambda x: x.name, reverse=True)
+    stroke_graph_results.sort(key=lambda x: x.name, reverse=True)
 
-    return segmentation_results[:5], edge_results[:5]  # Latest 5
+    return segmentation_results[:5], edge_results[:5], stroke_graph_results[:5]  # Latest 5
 
 def interactive_image_selection():
     """Interactive image selection from examples directory"""
@@ -156,7 +159,7 @@ def process_painting_pipeline(image_path):
         print("-" * 30)
         step3_start = datetime.now()
 
-        edge_results = process_all_masks(processed_img, masks, method="multi_scale")
+        edge_results = process_all_masks(processed_img, masks, method="adaptive")
 
         step3_time = (datetime.now() - step3_start).total_seconds()
         successful_extractions = len([r for r in edge_results if r is not None])
@@ -181,6 +184,36 @@ def process_painting_pipeline(image_path):
         print("   ✅ Complete!")
         print()
 
+        # Step 4: Stroke Graph Construction
+        print("🕸️  Step 4: Stroke Graph Construction")
+        print("-" * 30)
+        step4_start = datetime.now()
+
+        stroke_graph_results = process_all_stroke_graphs(edge_results)
+
+        step4_time = (datetime.now() - step4_start).total_seconds()
+        successful_graphs = len([r for r in stroke_graph_results if r is not None])
+
+        if successful_graphs > 0:
+            valid_graph_results = [r for r in stroke_graph_results if r is not None]
+            total_nodes = sum([r.stats['num_nodes'] for r in valid_graph_results])
+            total_edges = sum([r.stats['num_edges'] for r in valid_graph_results])
+            eulerian_paths = sum([1 for r in valid_graph_results if r.stats['is_eulerian']])
+
+            print(f"   ✅ Success: {successful_graphs}/{len(edge_results)} graphs")
+            print(f"   🔗 Total nodes: {total_nodes:,}")
+            print(f"   📊 Total edges: {total_edges:,}")
+            print(f"   🛤️  Eulerian paths: {eulerian_paths}/{successful_graphs}")
+        else:
+            print("   ⚠️  No successful graph constructions")
+
+        # Save stroke graph results
+        stroke_graph_output_path = save_graph_visualization(stroke_graph_results)
+
+        print(f"   ⏱️  Time: {step4_time:.3f}s")
+        print("   ✅ Complete!")
+        print()
+
         # Summary
         total_time = (datetime.now() - start_time).total_seconds()
         print("📋 Processing Summary")
@@ -189,11 +222,14 @@ def process_painting_pipeline(image_path):
         print(f"   📐 Resolution: {original_dims} -> {processed_img.shape[:2]}")
         print(f"   🎭 Segments: {len(masks)}")
         print(f"   🖋️  Extractions: {successful_extractions}")
+        print(f"   🕸️  Graphs: {successful_graphs if 'successful_graphs' in locals() else 0}")
         print(f"   ⏱️  Total time: {total_time:.1f}s")
         print()
         print("📁 Output Files:")
         print(f"   🎯 Segmentation: {segmentation_output_path}")
         print(f"   🖋️  Edge extraction: {edge_output_path}")
+        if 'stroke_graph_output_path' in locals():
+            print(f"   🕸️  Stroke graphs: {stroke_graph_output_path}")
         print()
 
         return {
@@ -202,9 +238,11 @@ def process_painting_pipeline(image_path):
             'processing_time': total_time,
             'masks': len(masks),
             'extractions': successful_extractions,
+            'graphs': successful_graphs if 'successful_graphs' in locals() else 0,
             'coverage': total_coverage,
             'edge_output_path': edge_output_path,
-            'segmentation_output_path': segmentation_output_path
+            'segmentation_output_path': segmentation_output_path,
+            'stroke_graph_output_path': stroke_graph_output_path if 'stroke_graph_output_path' in locals() else None
         }
 
     except Exception as e:
@@ -238,7 +276,7 @@ def list_images():
 
 def show_recent_results():
     """Show recent processing results"""
-    seg_results, edge_results = find_recent_results()
+    seg_results, edge_results, stroke_graph_results = find_recent_results()
 
     print("📊 Recent Results")
     print("=" * 40)
@@ -265,7 +303,18 @@ def show_recent_results():
             print(f"   • {result.name} ({time_str})")
         print()
 
-    if not seg_results and not edge_results:
+    if stroke_graph_results:
+        print("🕸️  Stroke Graph Results:")
+        for result in stroke_graph_results:
+            timestamp = result.name.split('_')[-1].replace('.png', '')
+            if len(timestamp) == 6:  # HHMMSS format
+                time_str = f"{timestamp[:2]}:{timestamp[2:4]}:{timestamp[4:6]}"
+            else:
+                time_str = timestamp
+            print(f"   • {result.name} ({time_str})")
+        print()
+
+    if not seg_results and not edge_results and not stroke_graph_results:
         print("❌ No recent results found")
         print("💡 Run some processing first to generate results")
 
@@ -329,6 +378,8 @@ Examples:
         print()
         print("🎯 Next steps:")
         print(f"   • Open {Path(result['edge_output_path']).name} to view edge extraction")
+        if result.get('stroke_graph_output_path'):
+            print(f"   • Open {Path(result['stroke_graph_output_path']).name} to view stroke graphs")
         print("   • Use --show-results to see all recent outputs")
         print("   • Process more images or implement vector reconstruction")
     else:
