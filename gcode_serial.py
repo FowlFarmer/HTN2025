@@ -9,6 +9,17 @@ def find_serial_port(pattern="usbserial"):
             return port.device
     return None
 
+def wait_for_ok():
+    while True:
+        line = ser.readline().decode().strip()
+        if not line:
+            continue  # timeout, just keep looping
+        print("GRBL:", line)  # optional debug
+        if line.lower() == "ok":
+            return
+        if line.startswith("error"):
+            raise RuntimeError(f"GRBL error: {line}")
+
 def activate():
     # Example: auto-find a /dev/tty.usbserial* device
     port_name = find_serial_port("usbserial")
@@ -19,7 +30,13 @@ def activate():
     print("Move the two rails to the beginning to zero motors (The two arm axle joints should be close to the motors).")
     print("Press Enter to continue...")
     input()
+    ser.write(b"G21\n") # set units to mm
+    wait_for_ok()
+    ser.write(b"G90\n") # set to absolute positioning
+    wait_for_ok()
+    ser.write(b"G92 X0 Y0\n")  # home axis
+    wait_for_ok()
 
-# quick test
-ser.write(b"$$\n")  # ask GRBL for settings
-print(ser.readline().decode())
+
+if __name__ == "__main__":
+    activate()
