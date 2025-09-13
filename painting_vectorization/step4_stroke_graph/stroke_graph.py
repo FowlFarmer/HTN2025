@@ -774,7 +774,7 @@ def process_all_stroke_graphs(edge_results):
 
     return stroke_graphs
 
-def save_graph_visualization(stroke_graphs, output_dir="examples"):
+def save_graph_visualization(stroke_graphs, output_dir="results/step4_stroke_graphs"):
     """
     Save stroke graph visualization
 
@@ -880,8 +880,19 @@ def save_graph_visualization(stroke_graphs, output_dir="examples"):
     plt.suptitle(f'Semantic Drawing Order Analysis - {timestamp}', fontsize=16)
     plt.tight_layout()
 
-    # Save with timestamp
-    output_path = f"{output_dir}/stroke_graphs_{timestamp}.png"
+    # Determine output path and create directory
+    results_dir = Path(output_dir)
+    if not results_dir.exists():
+        results_dir = Path("results/step4_stroke_graphs")
+    if not results_dir.exists():
+        results_dir = Path("../results/step4_stroke_graphs")
+    if not results_dir.exists():
+        results_dir = Path(".")  # Fallback to current directory
+
+    # Create directory if it doesn't exist
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = results_dir / f"stroke_graphs_{timestamp}.png"
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 

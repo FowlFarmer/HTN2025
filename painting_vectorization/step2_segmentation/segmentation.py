@@ -160,7 +160,7 @@ def segment_painting(image_path, model_path=None):
 
     return selected_masks, selected_scores[:len(selected_masks)], processed_img
 
-def save_segmentation_results(masks, scores, processed_img, output_dir="examples"):
+def save_segmentation_results(masks, scores, processed_img, output_dir="results/step2_segmentation"):
     """
     Save segmentation results with timestamp
 
@@ -198,15 +198,18 @@ def save_segmentation_results(masks, scores, processed_img, output_dir="examples
     plt.tight_layout()
 
     # Determine output path
-    examples_dir = Path(output_dir)
-    if not examples_dir.exists():
-        examples_dir = Path("examples")
-    if not examples_dir.exists():
-        examples_dir = Path("../examples")
-    if not examples_dir.exists():
-        examples_dir = Path(".")  # Fallback to current directory
+    results_dir = Path(output_dir)
+    if not results_dir.exists():
+        results_dir = Path("results/step2_segmentation")
+    if not results_dir.exists():
+        results_dir = Path("../results/step2_segmentation")
+    if not results_dir.exists():
+        results_dir = Path(".")  # Fallback to current directory
 
-    output_path = examples_dir / f'segmentation_results_{timestamp}.png'
+    # Create directory if it doesn't exist
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = results_dir / f'segmentation_results_{timestamp}.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"   💾 Saved segmentation visualization: {output_path}")

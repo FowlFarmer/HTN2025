@@ -2,7 +2,7 @@
 """
 Painting Vectorization - Image Processor
 
-Process any image through the complete pipeline (Steps 1-4) and display results.
+Process any image through the complete pipeline (Steps 1-7) and display results.
 
 Usage:
     python process_image.py                    # Interactive mode - choose from examples
@@ -26,6 +26,9 @@ from step1_preprocessing.image_preprocessing import preprocess_image
 from step2_segmentation.segmentation import segment_painting, save_segmentation_results
 from step3_edge_extraction.edge_extraction import process_all_masks, save_edge_results
 from step4_stroke_graph.stroke_graph import process_all_stroke_graphs, save_graph_visualization
+from step5_vectorization.vectorization import process_all_vectorizations, save_vectorization_results
+from step6_sampling.sampling import process_all_sampling, save_sampling_results
+from step7_color_detection.color_detection import process_all_color_detection, save_color_detection_results
 
 def find_images_in_examples():
     """Find all image files in examples directory"""
@@ -43,21 +46,49 @@ def find_images_in_examples():
     return sorted(images)
 
 def find_recent_results():
-    """Find recent segmentation, edge extraction, and stroke graph results"""
-    examples_dir = Path("examples")
-    if not examples_dir.exists():
-        return [], [], []
+    """Find recent segmentation, edge extraction, stroke graph, vectorization, sampling, and color detection results"""
+    results_base = Path("results")
 
-    segmentation_results = list(examples_dir.glob("segmentation_results_*.png"))
-    edge_results = list(examples_dir.glob("edge_extraction_results_*.png"))
-    stroke_graph_results = list(examples_dir.glob("stroke_graph_results_*.png"))
+    # Define directories for each step
+    directories = {
+        'segmentation': results_base / "step2_segmentation",
+        'edge': results_base / "step3_edge_extraction",
+        'stroke_graph': results_base / "step4_stroke_graphs",
+        'vectorization': results_base / "step5_vectorization",
+        'sampling': results_base / "step6_sampling",
+        'color_detection': results_base / "step7_color_detection"
+    }
+
+    # Find results in each directory
+    segmentation_results = []
+    edge_results = []
+    stroke_graph_results = []
+    vectorization_results = []
+    sampling_results = []
+    color_detection_results = []
+
+    if directories['segmentation'].exists():
+        segmentation_results = list(directories['segmentation'].glob("segmentation_results_*.png"))
+    if directories['edge'].exists():
+        edge_results = list(directories['edge'].glob("edge_extraction_results_*.png"))
+    if directories['stroke_graph'].exists():
+        stroke_graph_results = list(directories['stroke_graph'].glob("stroke_graphs_*.png"))
+    if directories['vectorization'].exists():
+        vectorization_results = list(directories['vectorization'].glob("vectorization_results_*.png"))
+    if directories['sampling'].exists():
+        sampling_results = list(directories['sampling'].glob("sampling_results_*.png"))
+    if directories['color_detection'].exists():
+        color_detection_results = list(directories['color_detection'].glob("color_detection_results_*.png"))
 
     # Sort by timestamp in filename
     segmentation_results.sort(key=lambda x: x.name, reverse=True)
     edge_results.sort(key=lambda x: x.name, reverse=True)
     stroke_graph_results.sort(key=lambda x: x.name, reverse=True)
+    vectorization_results.sort(key=lambda x: x.name, reverse=True)
+    sampling_results.sort(key=lambda x: x.name, reverse=True)
+    color_detection_results.sort(key=lambda x: x.name, reverse=True)
 
-    return segmentation_results[:5], edge_results[:5], stroke_graph_results[:5]  # Latest 5
+    return segmentation_results[:5], edge_results[:5], stroke_graph_results[:5], vectorization_results[:5], sampling_results[:5], color_detection_results[:5]  # Latest 5
 
 def interactive_image_selection():
     """Interactive image selection from examples directory"""
@@ -214,6 +245,90 @@ def process_painting_pipeline(image_path):
         print("   ✅ Complete!")
         print()
 
+        # Step 5: Vectorization & Simplification
+        print("🔧 Step 5: Vectorization & Simplification")
+        print("-" * 30)
+        step5_start = datetime.now()
+
+        vectorized_results = process_all_vectorizations(stroke_graph_results, method='adaptive', max_error=1.0)
+
+        step5_time = (datetime.now() - step5_start).total_seconds()
+        successful_vectorizations = len([r for r in vectorized_results if r is not None])
+
+        if successful_vectorizations > 0:
+            valid_vectorized_results = [r for r in vectorized_results if r is not None]
+            total_original_points = sum([r['metadata']['total_points_original'] for r in valid_vectorized_results])
+            total_simplified_points = sum([r['metadata']['total_points_simplified'] for r in valid_vectorized_results])
+            avg_compression = np.mean([r['metadata']['average_compression'] for r in valid_vectorized_results])
+            avg_error = np.mean([r['metadata']['average_error'] for r in valid_vectorized_results])
+            total_vectorized_strokes = sum([r['metadata']['total_strokes'] for r in valid_vectorized_results])
+
+            print(f"   ✅ Success: {successful_vectorizations}/{len(stroke_graph_results)} vectorizations")
+            print(f"   🔧 Total strokes: {total_vectorized_strokes}")
+            print(f"   📉 Compression: {avg_compression:.2f}x ({total_original_points:,} → {total_simplified_points:,} points)")
+            print(f"   📏 Avg error: {avg_error:.2f} pixels")
+        else:
+            print("   ⚠️  No successful vectorizations")
+
+        # Save vectorization results
+        vectorization_output_path = save_vectorization_results(vectorized_results)
+
+        print(f"   ⏱️  Time: {step5_time:.3f}s")
+        print("   ✅ Complete!")
+        print()
+
+        # Step 6: Sampling & Scaling to Millimeters
+        print("📐 Step 6: Sampling & Scaling to Millimeters")
+        print("-" * 30)
+        step6_start = datetime.now()
+
+        sampling_results = process_all_sampling(vectorized_results, processed_img.shape,
+                                              spacing_mm=1.0, canvas_width_mm=160)
+
+        step6_time = (datetime.now() - step6_start).total_seconds()
+
+        # Extract statistics
+        stats = sampling_results['overall_statistics']
+        scale_info = sampling_results['scale_info']
+
+        print(f"   ✅ Success: {stats['successful_samplings']} samplings")
+        print(f"   📐 Scale: {scale_info['scale_mm_per_px']:.3f} mm/pixel")
+        print(f"   📏 Total length: {stats['total_length_mm']:.1f}mm")
+        print(f"   🎯 Canvas usage: {stats['canvas_utilization']:.1%}")
+        print(f"   🔄 Closed loops: {stats['closed_loops']}")
+
+        # Save sampling results
+        sampling_output_path = save_sampling_results(sampling_results)
+
+        print(f"   ⏱️  Time: {step6_time:.3f}s")
+        print("   ✅ Complete!")
+        print()
+
+        # Step 7: Color Detection - Warm vs Cool Classification
+        print("🎨 Step 7: Color Detection - Warm vs Cool Classification")
+        print("-" * 30)
+        step7_start = datetime.now()
+
+        color_detection_results = process_all_color_detection(processed_img, masks, sampling_results)
+
+        step7_time = (datetime.now() - step7_start).total_seconds()
+
+        # Extract color statistics
+        color_stats = color_detection_results['overall_statistics']
+
+        print(f"   ✅ Success: {color_stats['successful_classifications']} classifications")
+        print(f"   🔥 Warm strokes: {color_stats['warm_strokes']} ({color_stats['warm_percentage']:.1f}%)")
+        print(f"   ❄️  Cool strokes: {color_stats['cool_strokes']} ({color_stats['cool_percentage']:.1f}%)")
+        print(f"   🎨 Avg confidence: {color_stats['average_confidence']:.3f}")
+        print(f"   ⚙️  Method: {color_stats['method_used']}")
+
+        # Save color detection results
+        color_detection_output_path = save_color_detection_results(color_detection_results, processed_img, masks)
+
+        print(f"   ⏱️  Time: {step7_time:.3f}s")
+        print("   ✅ Complete!")
+        print()
+
         # Summary
         total_time = (datetime.now() - start_time).total_seconds()
         print("📋 Processing Summary")
@@ -223,6 +338,9 @@ def process_painting_pipeline(image_path):
         print(f"   🎭 Segments: {len(masks)}")
         print(f"   🖋️  Extractions: {successful_extractions}")
         print(f"   🕸️  Graphs: {successful_graphs if 'successful_graphs' in locals() else 0}")
+        print(f"   🔧 Vectorizations: {successful_vectorizations if 'successful_vectorizations' in locals() else 0}")
+        print(f"   📐 Samplings: {stats['successful_samplings'] if 'stats' in locals() else 0} ({stats['total_length_mm']:.1f}mm)" if 'stats' in locals() else "   📐 Samplings: 0")
+        print(f"   🎨 Color classifications: {color_stats['successful_classifications'] if 'color_stats' in locals() else 0} ({color_stats['warm_percentage'] if 'color_stats' in locals() else 0:.1f}% warm)" if 'color_stats' in locals() else "   🎨 Color classifications: 0")
         print(f"   ⏱️  Total time: {total_time:.1f}s")
         print()
         print("📁 Output Files:")
@@ -230,6 +348,12 @@ def process_painting_pipeline(image_path):
         print(f"   🖋️  Edge extraction: {edge_output_path}")
         if 'stroke_graph_output_path' in locals():
             print(f"   🕸️  Stroke graphs: {stroke_graph_output_path}")
+        if 'vectorization_output_path' in locals():
+            print(f"   🔧 Vectorization: {vectorization_output_path}")
+        if 'sampling_output_path' in locals():
+            print(f"   📐 Sampling: {sampling_output_path}")
+        if 'color_detection_output_path' in locals():
+            print(f"   🎨 Color detection: {color_detection_output_path}")
         print()
 
         return {
@@ -239,10 +363,18 @@ def process_painting_pipeline(image_path):
             'masks': len(masks),
             'extractions': successful_extractions,
             'graphs': successful_graphs if 'successful_graphs' in locals() else 0,
+            'vectorizations': successful_vectorizations if 'successful_vectorizations' in locals() else 0,
+            'samplings': stats['successful_samplings'] if 'stats' in locals() else 0,
+            'total_length_mm': stats['total_length_mm'] if 'stats' in locals() else 0.0,
+            'color_classifications': color_stats['successful_classifications'] if 'color_stats' in locals() else 0,
+            'warm_percentage': color_stats['warm_percentage'] if 'color_stats' in locals() else 0.0,
             'coverage': total_coverage,
             'edge_output_path': edge_output_path,
             'segmentation_output_path': segmentation_output_path,
-            'stroke_graph_output_path': stroke_graph_output_path if 'stroke_graph_output_path' in locals() else None
+            'stroke_graph_output_path': stroke_graph_output_path if 'stroke_graph_output_path' in locals() else None,
+            'vectorization_output_path': vectorization_output_path if 'vectorization_output_path' in locals() else None,
+            'sampling_output_path': sampling_output_path if 'sampling_output_path' in locals() else None,
+            'color_detection_output_path': color_detection_output_path if 'color_detection_output_path' in locals() else None
         }
 
     except Exception as e:
@@ -276,7 +408,7 @@ def list_images():
 
 def show_recent_results():
     """Show recent processing results"""
-    seg_results, edge_results, stroke_graph_results = find_recent_results()
+    seg_results, edge_results, stroke_graph_results, vectorization_results, sampling_results, color_detection_results = find_recent_results()
 
     print("📊 Recent Results")
     print("=" * 40)
@@ -314,7 +446,40 @@ def show_recent_results():
             print(f"   • {result.name} ({time_str})")
         print()
 
-    if not seg_results and not edge_results and not stroke_graph_results:
+    if vectorization_results:
+        print("🔧 Vectorization Results:")
+        for result in vectorization_results:
+            timestamp = result.name.split('_')[-1].replace('.png', '')
+            if len(timestamp) == 6:  # HHMMSS format
+                time_str = f"{timestamp[:2]}:{timestamp[2:4]}:{timestamp[4:6]}"
+            else:
+                time_str = timestamp
+            print(f"   • {result.name} ({time_str})")
+        print()
+
+    if sampling_results:
+        print("📐 Sampling Results:")
+        for result in sampling_results:
+            timestamp = result.name.split('_')[-1].replace('.png', '')
+            if len(timestamp) == 6:  # HHMMSS format
+                time_str = f"{timestamp[:2]}:{timestamp[2:4]}:{timestamp[4:6]}"
+            else:
+                time_str = timestamp
+            print(f"   • {result.name} ({time_str})")
+        print()
+
+    if color_detection_results:
+        print("🎨 Color Detection Results:")
+        for result in color_detection_results:
+            timestamp = result.name.split('_')[-1].replace('.png', '')
+            if len(timestamp) == 6:  # HHMMSS format
+                time_str = f"{timestamp[:2]}:{timestamp[2:4]}:{timestamp[4:6]}"
+            else:
+                time_str = timestamp
+            print(f"   • {result.name} ({time_str})")
+        print()
+
+    if not seg_results and not edge_results and not stroke_graph_results and not vectorization_results and not sampling_results and not color_detection_results:
         print("❌ No recent results found")
         print("💡 Run some processing first to generate results")
 
@@ -380,8 +545,14 @@ Examples:
         print(f"   • Open {Path(result['edge_output_path']).name} to view edge extraction")
         if result.get('stroke_graph_output_path'):
             print(f"   • Open {Path(result['stroke_graph_output_path']).name} to view stroke graphs")
+        if result.get('vectorization_output_path'):
+            print(f"   • Open {Path(result['vectorization_output_path']).name} to view vectorized strokes")
+        if result.get('sampling_output_path'):
+            print(f"   • Open {Path(result['sampling_output_path']).name} to view 1mm sampled points")
+        if result.get('color_detection_output_path'):
+            print(f"   • Open {Path(result['color_detection_output_path']).name} to view warm/cool color classification")
         print("   • Use --show-results to see all recent outputs")
-        print("   • Process more images or implement vector reconstruction")
+        print("   • Ready for robot drawing with millimeter coordinates and color flags!")
     else:
         print("😞 Processing failed")
         sys.exit(1)

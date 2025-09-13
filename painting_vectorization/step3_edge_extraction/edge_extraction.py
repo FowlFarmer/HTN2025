@@ -702,7 +702,7 @@ def process_all_masks(image, masks, method="adaptive"):
 
     return results
 
-def save_edge_results(results, masks, image_shape, output_dir="examples"):
+def save_edge_results(results, masks, image_shape, output_dir="results/step3_edge_extraction"):
     """
     Save edge extraction results with timestamp
 
@@ -749,8 +749,19 @@ def save_edge_results(results, masks, image_shape, output_dir="examples"):
     plt.suptitle(f'Edge Extraction Results - {timestamp}', fontsize=16)
     plt.tight_layout()
 
-    # Save with timestamp
-    output_path = f"{output_dir}/edge_extraction_results_{timestamp}.png"
+    # Determine output path and create directory
+    results_dir = Path(output_dir)
+    if not results_dir.exists():
+        results_dir = Path("results/step3_edge_extraction")
+    if not results_dir.exists():
+        results_dir = Path("../results/step3_edge_extraction")
+    if not results_dir.exists():
+        results_dir = Path(".")  # Fallback to current directory
+
+    # Create directory if it doesn't exist
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = results_dir / f"edge_extraction_results_{timestamp}.png"
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
