@@ -2,7 +2,7 @@
 """
 Painting Vectorization - Image Processor
 
-Process any image through the complete pipeline (Steps 1-7) and display results.
+Process any image through the complete pipeline (Steps 1-8) and display results.
 
 Usage:
     python process_image.py                    # Interactive mode - choose from examples
@@ -29,6 +29,7 @@ from step4_stroke_graph.stroke_graph import process_all_stroke_graphs, save_grap
 from step5_vectorization.vectorization import process_all_vectorizations, save_vectorization_results
 from step6_sampling.sampling import process_all_sampling, save_sampling_results
 from step7_color_detection.color_detection import process_all_color_detection, save_color_detection_results
+from step8_stroke_ordering.stroke_ordering import process_all_stroke_ordering, save_stroke_ordering_results
 
 def find_images_in_examples():
     """Find all image files in examples directory"""
@@ -56,7 +57,8 @@ def find_recent_results():
         'stroke_graph': results_base / "step4_stroke_graphs",
         'vectorization': results_base / "step5_vectorization",
         'sampling': results_base / "step6_sampling",
-        'color_detection': results_base / "step7_color_detection"
+        'color_detection': results_base / "step7_color_detection",
+        'stroke_ordering': results_base / "step8_stroke_ordering"
     }
 
     # Find results in each directory
@@ -66,6 +68,7 @@ def find_recent_results():
     vectorization_results = []
     sampling_results = []
     color_detection_results = []
+    stroke_ordering_results = []
 
     if directories['segmentation'].exists():
         segmentation_results = list(directories['segmentation'].glob("segmentation_results_*.png"))
@@ -79,6 +82,8 @@ def find_recent_results():
         sampling_results = list(directories['sampling'].glob("sampling_results_*.png"))
     if directories['color_detection'].exists():
         color_detection_results = list(directories['color_detection'].glob("color_detection_results_*.png"))
+    if directories['stroke_ordering'].exists():
+        stroke_ordering_results = list(directories['stroke_ordering'].glob("stroke_ordering_*.*"))
 
     # Sort by timestamp in filename
     segmentation_results.sort(key=lambda x: x.name, reverse=True)
@@ -87,8 +92,9 @@ def find_recent_results():
     vectorization_results.sort(key=lambda x: x.name, reverse=True)
     sampling_results.sort(key=lambda x: x.name, reverse=True)
     color_detection_results.sort(key=lambda x: x.name, reverse=True)
+    stroke_ordering_results.sort(key=lambda x: x.name, reverse=True)
 
-    return segmentation_results[:5], edge_results[:5], stroke_graph_results[:5], vectorization_results[:5], sampling_results[:5], color_detection_results[:5]  # Latest 5
+    return segmentation_results[:5], edge_results[:5], stroke_graph_results[:5], vectorization_results[:5], sampling_results[:5], color_detection_results[:5], stroke_ordering_results[:5]  # Latest 5
 
 def interactive_image_selection():
     """Interactive image selection from examples directory"""
@@ -329,6 +335,32 @@ def process_painting_pipeline(image_path):
         print("   ✅ Complete!")
         print()
 
+        # Step 8: Flattening & Stroke Ordering (Travel Optimization)
+        print("🚀 Step 8: Flattening & Stroke Ordering (Travel Optimization)")
+        print("-" * 30)
+        step8_start = datetime.now()
+
+        ordering_results = process_all_stroke_ordering(color_detection_results, strategy='hybrid')
+
+        step8_time = (datetime.now() - step8_start).total_seconds()
+
+        # Extract ordering statistics
+        ordering_stats = ordering_results['statistics']
+
+        print(f"   ✅ Success: {ordering_stats['total_strokes']} strokes flattened and optimized")
+        print(f"   🎯 Strategy: {ordering_stats['optimization_method']}")
+        print(f"   📏 Drawing length: {ordering_stats['total_length_mm']:.1f}mm")
+        print(f"   ✈️  Travel distance: {ordering_stats['estimated_travel_distance_mm']:.1f}mm")
+        print(f"   🔄 Pen lifts: {ordering_stats['total_pen_lifts']}")
+        print(f"   ⏱️  Estimated execution: {ordering_stats['estimated_duration_s']:.1f}s ({ordering_stats['estimated_duration_s']/60:.1f} min)")
+
+        # Save stroke ordering results
+        stroke_ordering_output_path = save_stroke_ordering_results(ordering_results)
+
+        print(f"   ⏱️  Time: {step8_time:.3f}s")
+        print("   ✅ Complete!")
+        print()
+
         # Summary
         total_time = (datetime.now() - start_time).total_seconds()
         print("📋 Processing Summary")
@@ -341,6 +373,7 @@ def process_painting_pipeline(image_path):
         print(f"   🔧 Vectorizations: {successful_vectorizations if 'successful_vectorizations' in locals() else 0}")
         print(f"   📐 Samplings: {stats['successful_samplings'] if 'stats' in locals() else 0} ({stats['total_length_mm']:.1f}mm)" if 'stats' in locals() else "   📐 Samplings: 0")
         print(f"   🎨 Color classifications: {color_stats['successful_classifications'] if 'color_stats' in locals() else 0} ({color_stats['warm_percentage'] if 'color_stats' in locals() else 0:.1f}% warm)" if 'color_stats' in locals() else "   🎨 Color classifications: 0")
+        print(f"   🚀 Stroke ordering: {ordering_stats['total_strokes'] if 'ordering_stats' in locals() else 0} strokes, {ordering_stats['total_pen_lifts'] if 'ordering_stats' in locals() else 0} pen lifts" if 'ordering_stats' in locals() else "   🚀 Stroke ordering: 0")
         print(f"   ⏱️  Total time: {total_time:.1f}s")
         print()
         print("📁 Output Files:")
@@ -354,6 +387,8 @@ def process_painting_pipeline(image_path):
             print(f"   📐 Sampling: {sampling_output_path}")
         if 'color_detection_output_path' in locals():
             print(f"   🎨 Color detection: {color_detection_output_path}")
+        if 'stroke_ordering_output_path' in locals():
+            print(f"   🚀 Stroke ordering: {stroke_ordering_output_path}")
         print()
 
         return {
@@ -368,13 +403,16 @@ def process_painting_pipeline(image_path):
             'total_length_mm': stats['total_length_mm'] if 'stats' in locals() else 0.0,
             'color_classifications': color_stats['successful_classifications'] if 'color_stats' in locals() else 0,
             'warm_percentage': color_stats['warm_percentage'] if 'color_stats' in locals() else 0.0,
+            'stroke_ordering': ordering_stats['total_strokes'] if 'ordering_stats' in locals() else 0,
+            'pen_lifts': ordering_stats['total_pen_lifts'] if 'ordering_stats' in locals() else 0,
             'coverage': total_coverage,
             'edge_output_path': edge_output_path,
             'segmentation_output_path': segmentation_output_path,
             'stroke_graph_output_path': stroke_graph_output_path if 'stroke_graph_output_path' in locals() else None,
             'vectorization_output_path': vectorization_output_path if 'vectorization_output_path' in locals() else None,
             'sampling_output_path': sampling_output_path if 'sampling_output_path' in locals() else None,
-            'color_detection_output_path': color_detection_output_path if 'color_detection_output_path' in locals() else None
+            'color_detection_output_path': color_detection_output_path if 'color_detection_output_path' in locals() else None,
+            'stroke_ordering_output_path': stroke_ordering_output_path if 'stroke_ordering_output_path' in locals() else None
         }
 
     except Exception as e:
@@ -408,7 +446,7 @@ def list_images():
 
 def show_recent_results():
     """Show recent processing results"""
-    seg_results, edge_results, stroke_graph_results, vectorization_results, sampling_results, color_detection_results = find_recent_results()
+    seg_results, edge_results, stroke_graph_results, vectorization_results, sampling_results, color_detection_results, stroke_ordering_results = find_recent_results()
 
     print("📊 Recent Results")
     print("=" * 40)
@@ -479,7 +517,18 @@ def show_recent_results():
             print(f"   • {result.name} ({time_str})")
         print()
 
-    if not seg_results and not edge_results and not stroke_graph_results and not vectorization_results and not sampling_results and not color_detection_results:
+    if stroke_ordering_results:
+        print("🚀 Stroke Ordering Results:")
+        for result in stroke_ordering_results:
+            timestamp = result.name.split('_')[-1].replace('.json', '').replace('.png', '').replace('.gcode', '').replace('.csv', '')
+            if len(timestamp) == 6:  # HHMMSS format
+                time_str = f"{timestamp[:2]}:{timestamp[2:4]}:{timestamp[4:6]}"
+            else:
+                time_str = timestamp
+            print(f"   • {result.name} ({time_str})")
+        print()
+
+    if not seg_results and not edge_results and not stroke_graph_results and not vectorization_results and not sampling_results and not color_detection_results and not stroke_ordering_results:
         print("❌ No recent results found")
         print("💡 Run some processing first to generate results")
 
@@ -551,8 +600,10 @@ Examples:
             print(f"   • Open {Path(result['sampling_output_path']).name} to view 1mm sampled points")
         if result.get('color_detection_output_path'):
             print(f"   • Open {Path(result['color_detection_output_path']).name} to view warm/cool color classification")
+        if result.get('stroke_ordering_output_path'):
+            print(f"   • Open {Path(result['stroke_ordering_output_path']).name} to view optimized robot instructions")
         print("   • Use --show-results to see all recent outputs")
-        print("   • Ready for robot drawing with millimeter coordinates and color flags!")
+        print("   • Ready for hardware execution with JSON/G-code robot instructions!")
     else:
         print("😞 Processing failed")
         sys.exit(1)
