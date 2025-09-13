@@ -55,7 +55,6 @@ class GRBLController:
         self._ser.write(b"G92 X0 Y0\n")  # home axis
         self.wait_for_ok()
 
-# Example usage:
-# ctrl = GRBLController()
-# ctrl.connect()
-# ctrl.activate()
+if __name__ == "__main__":
+    controller = GRBLController()
+    controller.activate()
