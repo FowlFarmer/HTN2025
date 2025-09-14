@@ -2,7 +2,7 @@ from prodplotter import DeltaActuator
 import json
 import time
 # Load JSON
-with open("painting_vectorization/results/step8_stroke_ordering/starry-updated.json", "r") as f:
+with open("painting_vectorization/results/step8_stroke_ordering/starry.json", "r") as f:
     data = json.load(f)
 
 act = DeltaActuator(observe=True)
