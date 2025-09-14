@@ -1,0 +1,3 @@
+opencv-python>=4.8.0
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.11
