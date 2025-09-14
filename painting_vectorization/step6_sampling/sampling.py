@@ -37,18 +37,19 @@ def calculate_scale_factor(image_width_px, canvas_width_mm=CANVAS_SIZE_MM):
     """
     return canvas_width_mm / image_width_px
 
-def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0)):
+def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0), coordinate_format='auto'):
     """
     Convert pixel coordinates to millimeters
     
-    Converts from sknw coordinates (y,x format) to millimeter coordinates (x,y format)
+    Handles both sknw coordinates (y,x format) and standard coordinates (x,y format)
     and flips Y-axis to match expected orientation, applying mask offset
 
     Args:
-        pts_px: numpy.ndarray - Points in pixel coordinates (y,x format from sknw)
+        pts_px: numpy.ndarray - Points in pixel coordinates
         scale_mm_per_px: float - Scale factor from calculate_scale_factor
         canvas_height_mm: float - Canvas height for coordinate system
         offset: tuple - (x_offset, y_offset) from mask cropping
+        coordinate_format: str - 'sknw' for (y,x), 'standard' for (x,y), 'auto' for detection
 
     Returns:
         numpy.ndarray: Points in millimeter coordinates (x,y format)
@@ -56,20 +57,29 @@ def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM, offs
     if len(pts_px) == 0:
         return pts_px
 
-    # sknw returns points in (y,x) format, but we need (x,y) for plotting
-    # Swap coordinates: pts_px[:, 0] is y, pts_px[:, 1] is x
     if len(pts_px.shape) == 2 and pts_px.shape[1] >= 2:
-        # Swap x and y coordinates and apply offset to place in original image coordinates
-        # offset is (x_offset, y_offset) so we add offset[0] to x and offset[1] to y
-        pts_mm = np.column_stack([pts_px[:, 1] + offset[0], pts_px[:, 0] + offset[1]]) * scale_mm_per_px
-        # Flip Y-axis to correct orientation (sknw Y increases downward, we want upward)
+        # Auto-detect coordinate format based on context
+        if coordinate_format == 'auto':
+            # Assume standard (x,y) format for outline-only mode
+            # This is a simple heuristic - in practice you might want more sophisticated detection
+            coordinate_format = 'standard'
+        
+        if coordinate_format == 'sknw':
+            # sknw returns points in (y,x) format, swap to (x,y)
+            # Swap coordinates: pts_px[:, 0] is y, pts_px[:, 1] is x
+            pts_mm = np.column_stack([pts_px[:, 1] + offset[0], pts_px[:, 0] + offset[1]]) * scale_mm_per_px
+        else:  # standard (x,y) format
+            # Points are already in (x,y) format, just apply offset
+            pts_mm = np.column_stack([pts_px[:, 0] + offset[0], pts_px[:, 1] + offset[1]]) * scale_mm_per_px
+        
+        # Flip Y-axis to correct orientation (image Y increases downward, we want upward)
         pts_mm[:, 1] = canvas_height_mm - pts_mm[:, 1]
     else:
         pts_mm = pts_px * scale_mm_per_px
     
     return pts_mm
 
-def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0)):
+def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0), coordinate_format='auto'):
     """
     Resample polyline with uniform spacing in millimeters
 
@@ -79,15 +89,16 @@ def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_
         spacing_mm: float - Desired spacing between points in mm
         canvas_height_mm: float - Canvas height for coordinate conversion
         offset: tuple - (x_offset, y_offset) from mask cropping
+        coordinate_format: str - 'sknw' for (y,x), 'standard' for (x,y), 'auto' for detection
 
     Returns:
         numpy.ndarray: Uniformly spaced points in mm coordinates
     """
     if len(pts_px) < 2:
-        return convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset)
+        return convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset, coordinate_format)
 
     # Convert to mm with coordinate flip and offset
-    pts_mm = convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset)
+    pts_mm = convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset, coordinate_format)
 
     # Calculate cumulative distances
     deltas = np.linalg.norm(np.diff(pts_mm, axis=0), axis=1)
@@ -252,8 +263,13 @@ def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_l
         }
 
     try:
+        # Detect coordinate format based on stroke method
+        coordinate_format = 'standard'  # Default for outline approach
+        if 'method' in stroke_result and stroke_result['method'] != 'outline_tracing':
+            coordinate_format = 'sknw'  # Traditional stroke graphs use sknw format
+        
         # Resample with uniform spacing, applying offset
-        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm, CANVAS_SIZE_MM, offset)
+        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm, CANVAS_SIZE_MM, offset, coordinate_format)
 
         # Handle short segments
         sampled_pts_mm = handle_short_segments(sampled_pts_mm, min_length_mm)
