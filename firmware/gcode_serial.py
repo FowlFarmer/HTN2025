@@ -1,109 +1,119 @@
 import serial
 import serial.tools.list_ports
-
 import time
-import threading # add commands to buffer and it will send them in order in background
-import queue
 
 class GRBLController:
-    def __init__(self, pattern="usb", baud=115200, timeout=1):
+    def __init__(self, pattern="usb", baud=9600, timeout=1.0):
         self._pattern = pattern
         self._baud = baud
         self._timeout = timeout
         self._ser = None
-        self._t = None
-        self._command_queue = queue.Queue()
 
+    # ---- serial helpers ----
     def _find_serial_port(self):
-        """Find the first serial port whose name contains the pattern."""
-        ports = serial.tools.list_ports.comports()
-        for port in ports:
-            if self._pattern.lower() in port.device.lower():
-                return port.device
+        for p in serial.tools.list_ports.comports():
+            if self._pattern.lower() in p.device.lower():
+                return p.device
         return None
 
     def connect(self):
-        """Locate the port and open a serial connection to GRBL."""
-        port_name = self._find_serial_port()
-        if not port_name:
-            raise RuntimeError("No tty.usbserial device found")
+        port = self._find_serial_port()
+        if not port:
+            raise RuntimeError(f"No serial device matching '{self._pattern}' found")
+        self._ser = serial.Serial(port, self._baud, timeout=self._timeout)
+        print(f"Using port: {port}")
+        # Small pause so GRBL can reset & print its banner
+        time.sleep(0.2)
+        self._flush_input()
 
-        self._ser = serial.Serial(port_name, self._baud, timeout=self._timeout)
-        print(f"Using port: {port_name}")
+    def _flush_input(self):
+        """Clear any pending input (boot banner, junk)."""
+        if not self._ser: return
+        self._ser.reset_input_buffer()
+        # Some adapters ignore reset_input_buffer; do a timed drain:
+        t0 = time.time()
+        while time.time() - t0 < 0.15 and self._ser.in_waiting:
+            _ = self._ser.read(self._ser.in_waiting)
 
-    def wait_for_ok(self):
-        """Block until GRBL replies 'ok' or error."""
+    def _wait_for_ok(self):
+        """Block until we read 'ok' or 'error:' line. Returns when ok; raises on error."""
         if not self._ser:
-            raise RuntimeError("Serial connection not established. Call connect() first.")
+            raise RuntimeError("Not connected")
         while True:
-            line = self._ser.readline().decode().strip()
+            line = self._ser.readline()
             if not line:
-                time.sleep(0.005)
-                continue  # timeout, just keep looping
-            print("GRBL:", line)
-            if line.lower() == "ok":
-                return
-            if line.startswith("error"):
-                raise RuntimeError(f"GRBL error: {line}")
+                # timeout—loop again
+                continue
+            try:
+                s = line.decode(errors="ignore").strip()
+            except Exception:
+                s = line.decode("latin1", errors="ignore").strip()
 
+            if not s:
+                continue
+            # Uncomment if you want to see GRBL responses while debugging:
+            # print("GRBL:", s)
+
+            low = s.lower()
+            if low == "ok":
+                return
+            if low.startswith("error"):
+                raise RuntimeError(f"GRBL error: {s}")
+            # Otherwise it's a status/info line; keep reading.
+
+    def _send_and_wait(self, cmd: str):
+        """Write a single G-code/command line and wait for ok."""
+        if not self._ser:
+            self.connect()
+        if not cmd.endswith("\n"):
+            cmd += "\n"
+        self._ser.write(cmd.encode())
+        self._wait_for_ok()
+
+    # ---- high-level API ----
     def activate(self):
-        """Set up GRBL units, positioning, and home zero."""
         if not self._ser:
             self.connect()
 
-        print("Move the two rails to the beginning to zero motors "
-              "(The two arm axle joints should be close to the motors).")
-        input("Press Enter to continue...")
-        self._ser.write(b"$100=14.29\n")  # feedrate settings
-        self.wait_for_ok()
-        self._ser.write(b"$101=14.29\n")  
-        self.wait_for_ok()
+        print("Move rails to zero position manually, then press Enter.")
+        input()
 
-        self._ser.write(b"$110=20000\n")  # max speed settings
-        self.wait_for_ok()
-        self._ser.write(b"$111=20000\n")  
-        self.wait_for_ok()
+        # Example machine settings (tune to your machine)
+        self._send_and_wait("$100=14.29")   # X steps/mm
+        self._send_and_wait("$101=14.29")   # Y steps/mm
+        self._send_and_wait("$110=20000")   # X max rate
+        self._send_and_wait("$111=20000")   # Y max rate
+        self._send_and_wait("$120=200")     # X accel
+        self._send_and_wait("$121=200")     # Y accel
 
-        self._ser.write(b"$120=200\n")  # max accel settings
-        self.wait_for_ok()
-        self._ser.write(b"$121=200\n")  # max accel settings
-        self.wait_for_ok()
+        self._send_and_wait("G21")          # mm
+        self._send_and_wait("G90")          # absolute
+        self._send_and_wait("G92 X0 Y0")    # set work zero
 
-        self._ser.write(b"G21\n")  # set units to mm
-        self.wait_for_ok()
-        self._ser.write(b"G90\n")  # absolute positioning
-        self.wait_for_ok()
-        self._ser.write(b"G92 X0 Y0\n")  # home axis
-        self.wait_for_ok()
-    
-        self._ser.write(b"1 0\n")  # servo 1 zero position
-        self._ser.write(b"2 0\n")  # servo 1 zero position
+        # Your servo bridge expects these plain lines:
+        self._send_and_wait("M3 S0")          # servo1 to 0
+        # self._send_and_wait("2 0")          # servo2 to 0
 
-        self._t = threading.Thread(target=self._command_sender, daemon=True)
-        self._t.start()
-        
-    def _command_sender(self):
-        """Background thread to send commands from the queue."""
-        while True:
-            cmd = self._command_queue.get()
-            if cmd is None:
-                time.sleep(0.005)
-                continue
-            self._ser.write(cmd)
-            self.wait_for_ok()
-            # self._command_queue.task_done() # not necessary
-    
-    def set_position(self, x_mm, y_mm):
-        """Move to (x_mm, y_mm) in mm."""
-        if not self._ser:
-            raise RuntimeError("Serial connection not established. Call connect() first.")
-        cmd = f"G1 X{x_mm:.3f} Y{y_mm:.3f} F20000\n".encode()
-        self._command_queue.put(cmd)
+    def upCold(self):
+        self._send_and_wait("M3 S0")
+
+    def downCold(self):
+        self._send_and_wait("M3 S180")
+
+    # def upHot(self):
+    #     self._send_and_wait("2 0")
+
+    # def downHot(self):
+    #     self._send_and_wait("2 180")
+
+    def set_position(self, x_mm: float, y_mm: float, feed: int = 20000):
+        """Blocking move: returns after GRBL acknowledges the command line (not after motion completes)."""
+        self._send_and_wait(f"G1 X{x_mm:.3f} Y{y_mm:.3f} F{feed}")
 
 if __name__ == "__main__":
-    controller = GRBLController()
-    controller.activate()
-    print("Moving to (60, 60) mm")
-    controller.set_position(60, 60)
-    print("Moving to (0, 0) mm")
-    controller.set_position(0, 0)
+    ctl = GRBLController(pattern="usb", baud=115200, timeout=1.0)
+    ctl.activate()
+    print("Moving to (60,60)")
+    ctl.set_position(60, 60)
+    print("Moving to (0,0)")
+    ctl.set_position(0, 0)

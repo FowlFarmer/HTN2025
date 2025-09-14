@@ -24,6 +24,9 @@ class DeltaActuator:
     # Effective EE center offset in robot frame (mm)
     OFFSET_Y = -20.0
 
+    # --- trail config ---
+    TRAIL_MAX_POINTS = 20000  # cap memory; adjust as you like
+
     def __init__(self, controller: Optional[GRBLController] = None, observe: bool = True):
         self.controller = controller or GRBLController()
         self.controller.activate()
@@ -40,8 +43,17 @@ class DeltaActuator:
         self.rail_x2 =  self.RAIL_SEP / 2.0
 
         self.observe = observe
+        # trail buffers
+        self.trail_x = []
+        self.trail_y = []
+
         if self.observe:
             self._init_plot()
+
+    def upCold(self): self.controller.upCold()
+    def downCold(self): self.controller.downCold()
+    # def upHot(self): self.controller.upHot()
+    # def downHot(self): self.controller.downHot()
 
     def command(self, x_tl_mm: float, y_tl_mm: float) -> bool:
         """
@@ -86,13 +98,12 @@ class DeltaActuator:
         # 6) Send to GRBL
         self.controller.set_position(left_cmd, right_cmd)
 
-        # 7) Observer
+        # 7) Observer (and trail update)
         self._update_plot(x_robot, y_robot, yL, yR, x_robot, y_robot, infeasible=False)
         return True
 
     # -------- plotting (observer only) ----------
     def _init_plot(self):
-        import matplotlib.pyplot as plt
         plt.ion()
         self.fig, self.ax = plt.subplots()
         self.ax.set_aspect('equal', adjustable='box')
@@ -100,22 +111,40 @@ class DeltaActuator:
         self.ax.set_ylim(-220, 250)
         self.ax.plot([self.rail_x1, self.rail_x1], [-300, 300], '--', linewidth=1)
         self.ax.plot([self.rail_x2, self.rail_x2], [-300, 300], '--', linewidth=1)
+
+        # Trail line (thin, semi-transparent)
+        (self.trail_ln,) = self.ax.plot([], [], '-', linewidth=1.0, alpha=0.35, color='k', label='Trail')
+
         (self.ee_dot,)   = self.ax.plot([], [], 'ko', markersize=6, label='End Effector')
         (self.r1_dot,)   = self.ax.plot([], [], 'ro', markersize=6, label='Left Rail Slider')
         (self.r2_dot,)   = self.ax.plot([], [], 'bo', markersize=6, label='Right Rail Slider')
         (self.link1_ln,) = self.ax.plot([], [], '-', linewidth=2, alpha=0.9)
         (self.link2_ln,) = self.ax.plot([], [], '-', linewidth=2, alpha=0.9)
-        self.txt = self.ax.text(0.02, 0.98, "", transform=self.ax.transAxes, va='top', ha='left',
-                                fontsize=10, family='monospace',
-                                bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='gray', alpha=0.85))
+
+        self.txt = self.ax.text(
+            0.02, 0.98, "", transform=self.ax.transAxes, va='top', ha='left',
+            fontsize=10, family='monospace',
+            bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='gray', alpha=0.85)
+        )
         self.ax.legend(loc='lower right')
         self.fig.canvas.draw_idle()
         self.fig.show()
 
+    def clear_trail(self):
+        """Erase the accumulated trail from the plot (non-destructive to state)."""
+        self.trail_x.clear()
+        self.trail_y.clear()
+        if self.observe:
+            self.trail_ln.set_data([], [])
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+
     def _update_plot(self, x_plot, y_plot, yL, yR, x_robot, y_robot, infeasible: bool, note: str = ""):
         if not self.observe:
             return
+
         if infeasible or None in (x_plot, y_plot, yL, yR):
+            # Don’t add to trail on infeasible updates
             self.ee_dot.set_data([], [])
             self.r1_dot.set_data([], [])
             self.r2_dot.set_data([], [])
@@ -124,6 +153,19 @@ class DeltaActuator:
             msg = note or "Out of bounds / IK failed."
             self.txt.set_text(f"{msg}\n(robot) ({x_robot:.2f}, {y_robot:.2f}) mm")
         else:
+            # Append to trail (cap to max points to avoid unbounded memory)
+            self.trail_x.append(x_plot)
+            self.trail_y.append(y_plot)
+            if len(self.trail_x) > self.TRAIL_MAX_POINTS:
+                # Drop oldest in chunks for efficiency
+                drop = len(self.trail_x) - self.TRAIL_MAX_POINTS
+                del self.trail_x[:drop]
+                del self.trail_y[:drop]
+
+            # Update trail line
+            self.trail_ln.set_data(self.trail_x, self.trail_y)
+
+            # Update current geometry
             self.ee_dot.set_data([x_plot], [y_plot])
             self.r1_dot.set_data([self.rail_x1], [yL])
             self.r2_dot.set_data([self.rail_x2], [yR])
@@ -134,6 +176,7 @@ class DeltaActuator:
                 f"yL,yR:       ({yL:7.3f}, {yR:7.3f}) mm\n"
                 f"D/L:         {self.RAIL_SEP:.1f}/{self.ROD_LEN:.1f}  |  branch: {'above' if self.PREFER_ABOVE else 'below'}"
             )
+
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
 
@@ -141,8 +184,8 @@ class DeltaActuator:
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     act = DeltaActuator(observe=True)
-    # Corners & center in top-left coords
-    for p in [(0,0), (150,0), (150,150), (0,150), (75,75), (75,0), (0,75)]:
-        print(p, "->", act.command(*p))
+    # Draw a quick box to demo the trail
+    for p in [(0,0), (150,0), (150,150), (0,150), (0,0)]:
+        act.command(*p)
     if act.observe:
         plt.show(block=True)
