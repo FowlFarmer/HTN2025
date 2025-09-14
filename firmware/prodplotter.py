@@ -55,6 +55,9 @@ class DeltaActuator:
     # def upHot(self): self.controller.upHot()
     # def downHot(self): self.controller.downHot()
 
+    def return_home(self):
+        self.command(0, 0)
+
     def command(self, x_tl_mm: float, y_tl_mm: float) -> bool:
         """
         Accepts top-left-origin coordinates in mm: (0,0) at top-left of 150x150 area.

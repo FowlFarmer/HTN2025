@@ -122,3 +122,5 @@ music_stop_event.set()
 print("🎵 Stopping background music...")
 
 print("🎨 Painting complete!")
+
+act.return_home()
