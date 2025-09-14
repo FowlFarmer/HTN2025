@@ -11,6 +11,11 @@ matplotlib>=3.5.0
 scipy>=1.7.0
 sknw>=0.11.0
 
+pyaudio
+speechrecognition
+
+
+
 pyserial>=3.5
 pygame>=2.6.1     
 cohere>=4.21  
