@@ -131,12 +131,14 @@ def interactive_image_selection():
         print("\n👋 Goodbye!")
         return None
 
-def process_painting_pipeline(image_path):
+def process_painting_pipeline(image_path, outline_only=True):
     """
     Run the complete painting processing pipeline
 
     Args:
         image_path: Path to input image
+        outline_only: If True, use outline-only mode (max 4 pen lifts per mask)
+                     If False, use traditional internal content extraction
 
     Returns:
         dict: Processing results and metadata
@@ -172,7 +174,7 @@ def process_painting_pipeline(image_path):
         print("-" * 30)
         step2_start = datetime.now()
 
-        masks, scores, _ = segment_painting(str(image_path))
+        masks, scores, _ = segment_painting(str(image_path), processed_img=processed_img)
 
         step2_time = (datetime.now() - step2_start).total_seconds()
         print(f"   🎭 Masks: {len(masks)}")
@@ -191,80 +193,148 @@ def process_painting_pipeline(image_path):
         print("   ✅ Complete!")
         print()
 
-        # Step 3: Edge Extraction
-        print("🖋️  Step 3: Edge Extraction")
-        print("-" * 30)
-        step3_start = datetime.now()
+        # Step 3: Edge Extraction / Outline Extraction
+        if outline_only:
+            print("🎯 Step 3: Outline Extraction (Outline-Only Mode)")
+            print("-" * 30)
+            step3_start = datetime.now()
+            
+            from step3_edge_extraction.edge_extraction import process_all_masks_outline_only, save_outline_results
+            edge_results = process_all_masks_outline_only(masks, max_contours_per_mask=4)
+        else:
+            print("🖋️  Step 3: Edge Extraction (Traditional Mode)")
+            print("-" * 30)
+            step3_start = datetime.now()
 
-        edge_results = process_all_masks(processed_img, masks, method="adaptive")
+            edge_results = process_all_masks(processed_img, masks, method="adaptive")
 
         step3_time = (datetime.now() - step3_start).total_seconds()
         successful_extractions = len([r for r in edge_results if r is not None])
 
-        if successful_extractions > 0:
-            valid_results = [r for r in edge_results if r is not None]
-            avg_edge_density = np.mean([r['stats']['edge_density'] for r in valid_results])
-            avg_skeleton_density = np.mean([r['stats']['skeleton_density'] for r in valid_results])
-            total_skeleton_pixels = sum([r['stats']['skeleton_pixels'] for r in valid_results])
+        if outline_only:
+            if successful_extractions > 0:
+                valid_results = [r for r in edge_results if r is not None]
+                total_contours = sum([r['stats']['total_contours'] for r in valid_results])
+                total_perimeter = sum([r['stats']['total_perimeter'] for r in valid_results])
+                avg_contours_per_mask = total_contours / successful_extractions
 
-            print(f"   ✅ Success: {successful_extractions}/{len(masks)} masks")
-            print(f"   📏 Avg edge density: {avg_edge_density:.3f}")
-            print(f"   🖋️  Avg skeleton density: {avg_skeleton_density:.3f}")
-            print(f"   📊 Skeleton pixels: {total_skeleton_pixels:,}")
+                print(f"   ✅ Success: {successful_extractions}/{len(masks)} masks")
+                print(f"   📝 Total contours: {total_contours} (avg {avg_contours_per_mask:.1f} per mask)")
+                print(f"   📏 Total perimeter: {total_perimeter:.1f}px")
+                print(f"   🎯 Max pen lifts per mask: 4")
+            else:
+                print("   ⚠️  No successful outline extractions")
+
+            # Save outline results
+            edge_output_path = save_outline_results(edge_results, masks, processed_img.shape)
         else:
-            print("   ⚠️  No successful extractions")
+            if successful_extractions > 0:
+                valid_results = [r for r in edge_results if r is not None]
+                avg_edge_density = np.mean([r['stats']['edge_density'] for r in valid_results])
+                avg_skeleton_density = np.mean([r['stats']['skeleton_density'] for r in valid_results])
+                total_skeleton_pixels = sum([r['stats']['skeleton_pixels'] for r in valid_results])
 
-        # Save results
-        edge_output_path = save_edge_results(edge_results, masks, processed_img.shape)
+                print(f"   ✅ Success: {successful_extractions}/{len(masks)} masks")
+                print(f"   📏 Avg edge density: {avg_edge_density:.3f}")
+                print(f"   🖋️  Avg skeleton density: {avg_skeleton_density:.3f}")
+                print(f"   📊 Skeleton pixels: {total_skeleton_pixels:,}")
+            else:
+                print("   ⚠️  No successful extractions")
+
+            # Save traditional edge results
+            edge_output_path = save_edge_results(edge_results, masks, processed_img.shape)
 
         print(f"   ⏱️  Time: {step3_time:.3f}s")
         print("   ✅ Complete!")
         print()
 
-        # Step 4: Stroke Graph Construction
-        print("🕸️  Step 4: Stroke Graph Construction")
-        print("-" * 30)
-        step4_start = datetime.now()
+        # Step 4: Stroke Graph Construction / Outline Stroke Planning
+        if outline_only:
+            print("🎯 Step 4: Outline Stroke Planning (Outline-Only Mode)")
+            print("-" * 30)
+            step4_start = datetime.now()
+            
+            from step4_stroke_graph.stroke_graph import process_all_outline_stroke_plans, save_outline_stroke_visualization
+            stroke_graph_results = process_all_outline_stroke_plans(edge_results)
+        else:
+            print("🕸️  Step 4: Stroke Graph Construction (Traditional Mode)")
+            print("-" * 30)
+            step4_start = datetime.now()
 
-        stroke_graph_results = process_all_stroke_graphs(edge_results)
+            stroke_graph_results = process_all_stroke_graphs(edge_results)
 
         step4_time = (datetime.now() - step4_start).total_seconds()
         successful_graphs = len([r for r in stroke_graph_results if r is not None])
 
-        if successful_graphs > 0:
-            valid_graph_results = [r for r in stroke_graph_results if r is not None]
-            total_nodes = sum([r.stats['num_nodes'] for r in valid_graph_results])
-            total_edges = sum([r.stats['num_edges'] for r in valid_graph_results])
-            eulerian_paths = sum([1 for r in valid_graph_results if r.stats['is_eulerian']])
+        if outline_only:
+            if successful_graphs > 0:
+                valid_results = [r for r in stroke_graph_results if r is not None]
+                total_strokes = sum([r['stats']['num_strokes'] for r in valid_results])
+                total_pen_lifts_within = sum([r['stats']['num_pen_lifts'] for r in valid_results])
+                pen_lifts_between_masks = successful_graphs - 1 if successful_graphs > 1 else 0
+                total_pen_lifts = total_pen_lifts_within + pen_lifts_between_masks
 
-            print(f"   ✅ Success: {successful_graphs}/{len(edge_results)} graphs")
-            print(f"   🔗 Total nodes: {total_nodes:,}")
-            print(f"   📊 Total edges: {total_edges:,}")
-            print(f"   🛤️  Eulerian paths: {eulerian_paths}/{successful_graphs}")
+                print(f"   ✅ Success: {successful_graphs}/{len(edge_results)} stroke plans")
+                print(f"   ✏️  Total outline strokes: {total_strokes}")
+                print(f"   🔄 Pen lifts within masks: {total_pen_lifts_within}")
+                print(f"   🔄 Pen lifts between masks: {pen_lifts_between_masks}")
+                print(f"   🔄 Total pen lifts: {total_pen_lifts}")
+            else:
+                print("   ⚠️  No successful stroke plans")
+
+            # Save outline stroke results
+            stroke_graph_output_path = save_outline_stroke_visualization(stroke_graph_results)
         else:
-            print("   ⚠️  No successful graph constructions")
+            if successful_graphs > 0:
+                valid_graph_results = [r for r in stroke_graph_results if r is not None]
+                total_nodes = sum([r.stats['num_nodes'] for r in valid_graph_results])
+                total_edges = sum([r.stats['num_edges'] for r in valid_graph_results])
+                eulerian_paths = sum([1 for r in valid_graph_results if r.stats['is_eulerian']])
 
-        # Save stroke graph results
-        stroke_graph_output_path = save_graph_visualization(stroke_graph_results)
+                print(f"   ✅ Success: {successful_graphs}/{len(edge_results)} graphs")
+                print(f"   🔗 Total nodes: {total_nodes:,}")
+                print(f"   📊 Total edges: {total_edges:,}")
+                print(f"   🛤️  Eulerian paths: {eulerian_paths}/{successful_graphs}")
+            else:
+                print("   ⚠️  No successful graph constructions")
+
+            # Save traditional stroke graph results
+            stroke_graph_output_path = save_graph_visualization(stroke_graph_results)
 
         print(f"   ⏱️  Time: {step4_time:.3f}s")
         print("   ✅ Complete!")
         print()
 
         # Step 5: Vectorization & Simplification
-        print("🔧 Step 5: Vectorization & Simplification")
-        print("-" * 30)
-        step5_start = datetime.now()
+        if outline_only:
+            print("🔧 Step 5: Outline Vectorization & Simplification (Outline-Only Mode)")
+            print("-" * 30)
+            step5_start = datetime.now()
 
-        try:
-            vectorized_results = process_all_vectorizations(stroke_graph_results, method='adaptive', max_error=1.0)
-            step5_time = (datetime.now() - step5_start).total_seconds()
-            successful_vectorizations = len([r for r in vectorized_results if r is not None])
-        except Exception as step5_error:
-            print(f"   ❌ Vectorization failed: {str(step5_error)}")
-            step5_time = (datetime.now() - step5_start).total_seconds()
-            successful_vectorizations = 0
-            vectorized_results = []
+            try:
+                from step5_vectorization.vectorization import process_all_outline_vectorizations
+                vectorized_results = process_all_outline_vectorizations(stroke_graph_results, max_error=1.0)
+                step5_time = (datetime.now() - step5_start).total_seconds()
+                successful_vectorizations = len([r for r in vectorized_results if r is not None])
+            except Exception as step5_error:
+                print(f"   ❌ Outline vectorization failed: {str(step5_error)}")
+                step5_time = (datetime.now() - step5_start).total_seconds()
+                successful_vectorizations = 0
+                vectorized_results = []
+        else:
+            print("🔧 Step 5: Vectorization & Simplification (Traditional Mode)")
+            print("-" * 30)
+            step5_start = datetime.now()
+
+            try:
+                vectorized_results = process_all_vectorizations(stroke_graph_results, method='adaptive', max_error=1.0)
+                step5_time = (datetime.now() - step5_start).total_seconds()
+                successful_vectorizations = len([r for r in vectorized_results if r is not None])
+            except Exception as step5_error:
+                print(f"   ❌ Vectorization failed: {str(step5_error)}")
+                step5_time = (datetime.now() - step5_start).total_seconds()
+                successful_vectorizations = 0
+                vectorized_results = []
 
         if successful_vectorizations > 0:
             valid_vectorized_results = [r for r in vectorized_results if r is not None]
@@ -297,7 +367,7 @@ def process_painting_pipeline(image_path):
         print("-" * 30)
         step6_start = datetime.now()
 
-        sampling_results = process_all_sampling(vectorized_results, processed_img.shape,
+        sampling_results = process_all_sampling(vectorized_results, stroke_graph_results, processed_img.shape,
                                               spacing_mm=1.0, canvas_width_mm=160)
 
         step6_time = (datetime.now() - step6_start).total_seconds()
@@ -362,7 +432,7 @@ def process_painting_pipeline(image_path):
                 print(f"   📏 Drawing length: {ordering_stats['total_length_mm']:.1f}mm")
                 print(f"   ✈️  Travel distance: {ordering_stats['estimated_travel_distance_mm']:.1f}mm")
                 print(f"   🔄 Pen lifts: {ordering_stats['total_pen_lifts']}")
-                print(f"   ⏱️  Estimated execution: {ordering_stats['estimated_duration_s']:.1f}s ({ordering_stats['estimated_duration_s']/60:.1f} min)")
+                print(f"   🔧 Total masks: {ordering_stats['total_masks']}")
 
                 # Save stroke ordering results (optimized, no visualization for speed)
                 stroke_ordering_output_path = save_stroke_ordering_results(
@@ -376,7 +446,7 @@ def process_painting_pipeline(image_path):
                 if mask_arrays:
                     print(f"   📱 Mask breakdown for narration:")
                     for mask_array in mask_arrays:
-                        print(f"     • Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']}, {mask_array['total_duration_s']:.1f}s)")
+                        print(f"     • Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']}, {mask_array['total_length_mm']:.1f}mm)")
             else:
                 print(f"   ⚠️  No valid strokes available for ordering")
                 print(f"   📊 Total strokes found: {ordering_stats.get('total_strokes', 0)}")
@@ -580,6 +650,8 @@ Examples:
     parser.add_argument('image', nargs='?', help='Image file to process')
     parser.add_argument('--list', action='store_true', help='List available images')
     parser.add_argument('--show-results', action='store_true', help='Show recent results')
+    parser.add_argument('--traditional', action='store_true', help='Use traditional internal content extraction (default: outline-only mode)')
+    parser.add_argument('--outline-only', action='store_true', help='Use outline-only mode (default, max 4 pen lifts per mask)')
 
     args = parser.parse_args()
 
@@ -615,8 +687,19 @@ Examples:
         if image_path is None:
             return
 
+    # Determine processing mode
+    outline_only = not args.traditional  # Default to outline-only unless --traditional is specified
+    
+    if args.outline_only and args.traditional:
+        print("❌ Cannot specify both --outline-only and --traditional")
+        return
+    
+    mode_name = "Outline-Only" if outline_only else "Traditional"
+    print(f"🎯 Processing Mode: {mode_name}")
+    print()
+
     # Process the image
-    result = process_painting_pipeline(image_path)
+    result = process_painting_pipeline(image_path, outline_only=outline_only)
 
     if result['success']:
         print("🎉 Processing complete! ✨")

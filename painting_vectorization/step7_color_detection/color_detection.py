@@ -403,7 +403,7 @@ def process_all_color_detection(rgb_img, masks, sampling_results, method='lab'):
 
 def save_color_detection_results(results, rgb_img, masks, output_dir="results/step7_color_detection"):
     """
-    Save color detection visualization and results
+    Save color detection visualization and results with consistent scaling
 
     Args:
         results: Color detection results with classifications and statistics
@@ -414,14 +414,19 @@ def save_color_detection_results(results, rgb_img, masks, output_dir="results/st
     Returns:
         str: Path to saved visualization
     """
+    import sys
+    from pathlib import Path
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, save_visualization_with_timestamp,
+        hide_unused_subplots, STANDARD_TARGET_SIZE
+    )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create figure
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
 
     enhanced_results = results['enhanced_sampling_results']
     valid_graphs = [g for g in enhanced_results['sampled_graphs'] if g is not None]
@@ -444,13 +449,17 @@ def save_color_detection_results(results, rgb_img, masks, output_dir="results/st
         # Choose colors based on warmth
         stroke_color = warm_color if warmth_class == 0 else cool_color
 
-        # Plot canvas boundaries
+        # Scale millimeter coordinates to consistent display size
         canvas_size = enhanced_results['scale_info']['canvas_size_mm']
-        ax.plot([0, canvas_size, canvas_size, 0, 0],
-               [0, 0, canvas_size, canvas_size, 0],
+        mm_to_display_scale = STANDARD_TARGET_SIZE / canvas_size
+
+        # Plot canvas boundaries (scaled to display size)
+        canvas_display = STANDARD_TARGET_SIZE
+        ax.plot([0, canvas_display, canvas_display, 0, 0],
+               [0, 0, canvas_display, canvas_display, 0],
                'k--', alpha=0.3, linewidth=1)
 
-        # Plot strokes with warm/cool coloring
+        # Plot strokes with warm/cool coloring and consistent scaling
         for phase_name in ['boundary', 'internal', 'detail']:
             phase_strokes = graph_result[phase_name]
             alpha_values = {'boundary': 1.0, 'internal': 0.8, 'detail': 0.6}
@@ -462,15 +471,18 @@ def save_color_detection_results(results, rgb_img, masks, output_dir="results/st
                     alpha = alpha_values[phase_name]
                     width = width_values[phase_name]
 
+                    # Scale points to display coordinates
+                    points_display = points_mm * mm_to_display_scale
+
                     # Plot stroke path
-                    ax.plot(points_mm[:, 0], points_mm[:, 1],
+                    ax.plot(points_display[:, 0], points_display[:, 1],
                            color=stroke_color, linewidth=width, alpha=alpha)
 
                     # Mark start/end for open strokes
                     if not stroke['is_closed_loop']:
-                        ax.scatter(points_mm[0, 0], points_mm[0, 1],
+                        ax.scatter(points_display[0, 0], points_display[0, 1],
                                  c='green', s=15, marker='o', zorder=6, alpha=0.8)
-                        ax.scatter(points_mm[-1, 0], points_mm[-1, 1],
+                        ax.scatter(points_display[-1, 0], points_display[-1, 1],
                                  c='red', s=15, marker='s', zorder=6, alpha=0.8)
 
         # Set title with color classification
@@ -486,16 +498,24 @@ def save_color_detection_results(results, rgb_img, masks, output_dir="results/st
         ax.set_title(title, fontsize=10,
                     color=warm_color if warmth_class == 0 else cool_color,
                     fontweight='bold')
-        ax.set_xlim(0, canvas_size)
-        ax.set_ylim(0, canvas_size)
+        ax.set_xlim(0, STANDARD_TARGET_SIZE)
+        ax.set_ylim(0, STANDARD_TARGET_SIZE)
         ax.set_aspect('equal')
         ax.grid(True, alpha=0.3)
+        
+        # Add scaled mm labels
+        mm_ticks = np.linspace(0, canvas_size, 5)
+        display_ticks = mm_ticks * mm_to_display_scale
+        ax.set_xticks(display_ticks)
+        ax.set_yticks(display_ticks)
+        ax.set_xticklabels([f'{mm:.0f}' for mm in mm_ticks])
+        ax.set_yticklabels([f'{mm:.0f}' for mm in mm_ticks])
         ax.set_xlabel('X (mm)')
         ax.set_ylabel('Y (mm)')
+        ax.invert_yaxis()  # Match image coordinates
 
     # Hide unused subplots
-    for i in range(len(valid_graphs), 6):
-        axes[i].axis('off')
+    hide_unused_subplots(axes, len(valid_graphs))
 
     # Add legend
     legend_elements = [
@@ -509,29 +529,12 @@ def save_color_detection_results(results, rgb_img, masks, output_dir="results/st
 
     # Add overall statistics
     color_info = enhanced_results['color_info']
-    fig_title = f'Step 7: Color Classification - {timestamp}\n'
+    fig_title = f'Step 7: Color Classification\n'
     fig_title += f'🔥 {color_info["warm_masks"]} Warm • ❄️ {color_info["cool_masks"]} Cool • '
     fig_title += f'Method: {color_info["classification_method"].upper()}'
 
     plt.suptitle(fig_title, fontsize=16)
     plt.tight_layout()
 
-    # Determine output path and create directory
-    results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step7_color_detection")
-    if not results_dir.exists():
-        results_dir = Path("../results/step7_color_detection")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
-
-    # Create directory if it doesn't exist
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f"color_detection_results_{timestamp}.png"
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"   💾 Saved color detection visualization: {output_path}")
-
-    return output_path
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'color_detection_results')

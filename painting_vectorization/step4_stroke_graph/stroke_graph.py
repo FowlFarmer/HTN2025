@@ -11,6 +11,135 @@ except ImportError:
     SKNW_AVAILABLE = False
     print("Warning: sknw not available. Install with: pip install sknw")
 
+def find_optimal_start_point(path_points):
+    """
+    Find the best starting point for contour tracing
+    Priority: topmost point, then leftmost if tie
+    
+    Args:
+        path_points: Array of contour points (N, 2)
+    
+    Returns:
+        int: Index of optimal starting point
+    """
+    if len(path_points) == 0:
+        return 0
+    
+    # Find topmost points
+    min_y = np.min(path_points[:, 1])
+    top_points_mask = path_points[:, 1] == min_y
+    top_points_indices = np.where(top_points_mask)[0]
+    
+    # Among topmost points, find leftmost
+    top_points = path_points[top_points_indices]
+    leftmost_idx = np.argmin(top_points[:, 0])
+    
+    return top_points_indices[leftmost_idx]
+
+def create_contour_stroke_plan(outline_result):
+    """
+    Create stroke plan for contour tracing (no internal strokes)
+    
+    Args:
+        outline_result: Result from extract_mask_outline_only()
+    
+    Returns:
+        dict: Stroke plan with contour paths
+    """
+    if outline_result is None:
+        return None
+    
+    contours = outline_result['contours']
+    strokes = []
+    
+    for i, contour_data in enumerate(contours):
+        points = contour_data['points']
+        
+        # Find optimal starting point (topmost, then leftmost)
+        start_idx = find_optimal_start_point(points)
+        
+        # Reorder path to start from optimal point
+        reordered_path = np.concatenate([
+            points[start_idx:],
+            points[:start_idx]
+        ])
+        
+        # Close the contour by adding the first point at the end
+        closed_path = np.vstack([reordered_path, reordered_path[0]])
+        
+        stroke = {
+            'id': f'outline_{i}',
+            'path': closed_path,
+            'is_closed': True,
+            'length': contour_data['perimeter'],
+            'type': 'outline',
+            'contour_id': i,
+            'original_area': contour_data['area']
+        }
+        
+        strokes.append(stroke)
+    
+    # Calculate statistics
+    total_length = sum(s['length'] for s in strokes)
+    pen_lifts = max(0, len(strokes) - 1)  # Pen lifts between contours only
+    
+    return {
+        'strokes': strokes,
+        'pen_lifts': pen_lifts,
+        'total_length': total_length,
+        'method': 'outline_only',
+        'stats': {
+            'num_strokes': len(strokes),
+            'num_pen_lifts': pen_lifts,
+            'total_length': total_length,
+            'avg_stroke_length': total_length / len(strokes) if strokes else 0
+        }
+    }
+
+def process_all_outline_stroke_plans(outline_results):
+    """
+    Process all outline extraction results to create stroke plans
+    
+    Args:
+        outline_results: List of outline extraction results
+    
+    Returns:
+        list: List of stroke plans for each mask
+    """
+    print(f"   🎯 Creating stroke plans for {len(outline_results)} outline results...")
+    
+    stroke_plans = []
+    total_strokes = 0
+    total_pen_lifts = 0
+    
+    for i, outline_result in enumerate(outline_results):
+        print(f"   📝 Planning strokes for mask {i+1}/{len(outline_results)}...")
+        
+        stroke_plan = create_contour_stroke_plan(outline_result)
+        
+        if stroke_plan is not None:
+            stroke_plans.append(stroke_plan)
+            stats = stroke_plan['stats']
+            stroke_count = stats['num_strokes']
+            pen_lifts = stats['num_pen_lifts']
+            total_strokes += stroke_count
+            total_pen_lifts += pen_lifts
+            
+            print(f"      ✏️  {stroke_count} outline strokes")
+            print(f"      🔄 {pen_lifts} pen lifts within mask")
+            print(f"      📏 {stats['total_length']:.1f}px total length")
+        else:
+            print(f"      ⚠️  No stroke plan created, skipping...")
+            stroke_plans.append(None)
+    
+    successful_plans = len([p for p in stroke_plans if p is not None])
+    print(f"   ✅ Success: {successful_plans}/{len(outline_results)} stroke plans")
+    print(f"   ✏️  Total strokes: {total_strokes}")
+    print(f"   🔄 Total pen lifts within masks: {total_pen_lifts}")
+    print(f"   🔄 Additional pen lifts between masks: {successful_plans - 1}" if successful_plans > 1 else "")
+    
+    return stroke_plans
+
 def find_endpoints(skeleton):
     """
     Find endpoints in skeleton image
@@ -774,9 +903,95 @@ def process_all_stroke_graphs(edge_results):
 
     return stroke_graphs
 
+def save_outline_stroke_visualization(stroke_plans, output_dir="results/step4_stroke_graphs"):
+    """
+    Save outline stroke plan visualization
+    
+    Args:
+        stroke_plans: List of outline stroke plans
+        output_dir: Directory to save results
+    
+    Returns:
+        str: Path to saved visualization
+    """
+    import sys
+    from pathlib import Path
+    import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, set_consistent_axis_properties,
+        save_visualization_with_timestamp, hide_unused_subplots,
+        STANDARD_TARGET_SIZE
+    )
+    
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
+    
+    # Create white background for stroke visualization
+    background_img = np.ones((STANDARD_TARGET_SIZE, STANDARD_TARGET_SIZE, 3), dtype=np.uint8) * 255
+    
+    for i, stroke_plan in enumerate(stroke_plans):
+        if i >= 6:  # Max 6 subplots
+            break
+            
+        ax = axes[i]
+        
+        if stroke_plan is not None:
+            # Show white background
+            ax.imshow(background_img)
+            
+            # Draw stroke paths
+            colors = plt.cm.Set1(np.linspace(0, 1, len(stroke_plan['strokes'])))
+            
+            for j, stroke in enumerate(stroke_plan['strokes']):
+                path = stroke['path']
+                
+                # Scale path to fit the standard target size (assume original was ~720x454)
+                # We'll use a simple scaling approach
+                scaled_path = path.copy().astype(np.float32)
+                scaled_path[:, 0] = scaled_path[:, 0] * (STANDARD_TARGET_SIZE / 720)
+                scaled_path[:, 1] = scaled_path[:, 1] * (STANDARD_TARGET_SIZE / 454)
+                
+                # Draw stroke path
+                if len(scaled_path) > 1:
+                    ax.plot(scaled_path[:, 0], scaled_path[:, 1], 
+                           color=colors[j], linewidth=2, alpha=0.8)
+                    
+                    # Mark starting point
+                    ax.plot(scaled_path[0, 0], scaled_path[0, 1], 
+                           'go', markersize=6, alpha=0.8)
+                    
+                    # Add stroke number
+                    mid_idx = len(scaled_path) // 2
+                    ax.text(scaled_path[mid_idx, 0], scaled_path[mid_idx, 1], f'{j+1}',
+                           ha='center', va='center', fontweight='bold',
+                           color='white', fontsize=10,
+                           bbox=dict(boxstyle='circle', facecolor=colors[j], alpha=0.7))
+            
+            # Set title with statistics
+            stats = stroke_plan['stats']
+            title = f'Outline Strokes {i+1}\n{stats["num_strokes"]} strokes, {stats["num_pen_lifts"]} pen lifts'
+        else:
+            # Show empty background for failed plans
+            ax.imshow(background_img)
+            title = f'Outline Strokes {i+1}\nNo strokes found'
+        
+        # Set consistent axis properties
+        set_consistent_axis_properties(ax, title, STANDARD_TARGET_SIZE)
+    
+    # Hide unused subplots
+    hide_unused_subplots(axes, len(stroke_plans))
+    
+    plt.suptitle(f'Step 4: Outline Stroke Plans (Outline-Only Mode)', fontsize=16)
+    plt.tight_layout()
+    
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'outline_stroke_plans')
+
 def save_graph_visualization(stroke_graphs, output_dir="results/step4_stroke_graphs"):
     """
-    Save stroke graph visualization
+    Save stroke graph visualization with consistent scaling
 
     Args:
         stroke_graphs: List of StrokeGraph objects
@@ -785,13 +1000,21 @@ def save_graph_visualization(stroke_graphs, output_dir="results/step4_stroke_gra
     Returns:
         str: Path to saved visualization
     """
+    import sys
+    from pathlib import Path
     import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, set_consistent_axis_properties,
+        save_visualization_with_timestamp, hide_unused_subplots,
+        normalize_coordinates_to_display, SEMANTIC_COLORS, SEMANTIC_ALPHAS, SEMANTIC_WIDTHS,
+        STANDARD_TARGET_SIZE
+    )
+    import cv2
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create figure
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
 
     valid_graphs = [g for g in stroke_graphs if g is not None]
 
@@ -806,68 +1029,84 @@ def save_graph_visualization(stroke_graphs, output_dir="results/step4_stroke_gra
 
         # Draw graph structure
         if len(graph.nodes) > 0:
-            # Draw skeleton as background
-            ax.imshow(graph.skeleton, cmap='gray', alpha=0.2)
+            # Resize skeleton to consistent size
+            resized_skeleton = cv2.resize(graph.skeleton.astype(np.uint8), 
+                                        (STANDARD_TARGET_SIZE, STANDARD_TARGET_SIZE), 
+                                        interpolation=cv2.INTER_NEAREST)
+            ax.imshow(resized_skeleton, cmap='gray', alpha=0.2, origin='upper')
 
-            # Draw nodes
+            # Calculate scaling factor for coordinates
+            original_shape = graph.skeleton.shape
+            scale_factor = STANDARD_TARGET_SIZE / max(original_shape)
+
+            # Draw nodes with consistent scaling
             if SKNW_AVAILABLE:
                 for node in graph.nodes:
                     if hasattr(graph.G.nodes[node], 'o'):
                         y, x = graph.G.nodes[node]['o']  # sknw uses (y,x) order
+                        # Scale coordinates
+                        scaled_x = x * scale_factor
+                        scaled_y = y * scale_factor
+                        
                         if graph.G.degree(node) == 1:
-                            ax.plot(x, y, 'ro', markersize=6, alpha=0.7)
+                            ax.plot(scaled_x, scaled_y, 'ro', markersize=6, alpha=0.7)
                         elif graph.G.degree(node) > 2:
-                            ax.plot(x, y, 'bs', markersize=6, alpha=0.7)
+                            ax.plot(scaled_x, scaled_y, 'bs', markersize=6, alpha=0.7)
                         else:
-                            ax.plot(x, y, 'go', markersize=3, alpha=0.5)
+                            ax.plot(scaled_x, scaled_y, 'go', markersize=3, alpha=0.5)
 
-            # Draw edges with semantic classification
-            # Color scheme: Red=Boundary, Blue=Internal, Green=Detail
-            colors = {'boundary': 'red', 'internal': 'blue', 'detail': 'green'}
-            alphas = {'boundary': 0.9, 'internal': 0.7, 'detail': 0.5}
-            widths = {'boundary': 3, 'internal': 2, 'detail': 1}
-
+            # Draw edges with semantic classification and consistent scaling
             for edge, classification in semantic['stroke_classification'].items():
                 points = graph.get_edge_points(edge)
                 if len(points) > 0:
-                    # Convert points to x,y coordinates for plotting
-                    y_coords = [p[0] for p in points]
-                    x_coords = [p[1] for p in points]
+                    # Scale coordinates to consistent size
+                    scaled_points = normalize_coordinates_to_display(
+                        points, original_shape, STANDARD_TARGET_SIZE
+                    )
+                    
+                    if len(scaled_points) > 0:
+                        # Convert points to x,y coordinates for plotting
+                        y_coords = [p[0] for p in scaled_points]
+                        x_coords = [p[1] for p in scaled_points]
 
-                    color = colors.get(classification, 'gray')
-                    alpha = alphas.get(classification, 0.5)
-                    width = widths.get(classification, 1)
+                        color = SEMANTIC_COLORS.get(classification, 'gray')
+                        alpha = SEMANTIC_ALPHAS.get(classification, 0.5)
+                        width = SEMANTIC_WIDTHS.get(classification, 1)
 
-                    ax.plot(x_coords, y_coords, color=color, alpha=alpha,
-                           linewidth=width, solid_capstyle='round')
+                        ax.plot(x_coords, y_coords, color=color, alpha=alpha,
+                               linewidth=width, solid_capstyle='round')
 
             # Add drawing order numbers for boundary strokes (most important)
             boundary_strokes = semantic['drawing_phases']['boundary'][:10]  # Show first 10
             for order_idx, edge in enumerate(boundary_strokes):
                 points = graph.get_edge_points(edge)
                 if len(points) > 0:
-                    # Place number at midpoint of stroke
-                    mid_idx = len(points) // 2
-                    y, x = points[mid_idx]
-                    ax.text(x, y, str(order_idx + 1), fontsize=8, fontweight='bold',
-                           color='white', ha='center', va='center',
-                           bbox=dict(boxstyle='circle,pad=0.1', facecolor='red', alpha=0.8))
+                    # Scale coordinates
+                    scaled_points = normalize_coordinates_to_display(
+                        points, original_shape, STANDARD_TARGET_SIZE
+                    )
+                    if len(scaled_points) > 0:
+                        # Place number at midpoint of stroke
+                        mid_idx = len(scaled_points) // 2
+                        y, x = scaled_points[mid_idx]
+                        ax.text(x, y, str(order_idx + 1), fontsize=8, fontweight='bold',
+                               color='white', ha='center', va='center',
+                               bbox=dict(boxstyle='circle,pad=0.1', facecolor='red', alpha=0.8))
 
         # Display title with semantic information
         boundary_count = len(semantic['drawing_phases']['boundary'])
         internal_count = len(semantic['drawing_phases']['internal'])
         detail_count = len(semantic['drawing_phases']['detail'])
 
-        ax.set_title(f'Graph {i+1}: Semantic Order\n'
-                    f'{graph.stats["num_nodes"]} nodes, {graph.stats["num_edges"]} edges\n'
-                    f'{boundary_count} boundary, {internal_count} internal, {detail_count} detail',
-                    fontsize=10)
-        ax.axis('off')
-        ax.invert_yaxis()  # Invert y-axis to match image coordinates
+        title = (f'Graph {i+1}: Semantic Order\n'
+                f'{graph.stats["num_nodes"]} nodes, {graph.stats["num_edges"]} edges\n'
+                f'{boundary_count} boundary, {internal_count} internal, {detail_count} detail')
+        
+        # Set consistent axis properties
+        set_consistent_axis_properties(ax, title, STANDARD_TARGET_SIZE)
 
     # Hide unused subplots
-    for i in range(len(valid_graphs), 6):
-        axes[i].axis('off')
+    hide_unused_subplots(axes, len(valid_graphs))
 
     # Add legend
     legend_elements = [
@@ -877,27 +1116,11 @@ def save_graph_visualization(stroke_graphs, output_dir="results/step4_stroke_gra
     ]
     fig.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, 0.02), ncol=3)
 
-    plt.suptitle(f'Semantic Drawing Order Analysis - {timestamp}', fontsize=16)
+    plt.suptitle(f'Step 4: Stroke Graph Results', fontsize=16)
     plt.tight_layout()
 
-    # Determine output path and create directory
-    results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step4_stroke_graphs")
-    if not results_dir.exists():
-        results_dir = Path("../results/step4_stroke_graphs")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
-
-    # Create directory if it doesn't exist
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f"stroke_graphs_{timestamp}.png"
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"   💾 Saved graph visualization: {output_path}")
-    return output_path
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'stroke_graphs')
 
 if __name__ == "__main__":
     # Test stroke graph construction

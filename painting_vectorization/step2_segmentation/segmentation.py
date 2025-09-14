@@ -63,13 +63,14 @@ def merge_masks(masks, iou_threshold=0.6):
 
     return merged
 
-def segment_painting(image_path, model_path=None):
+def segment_painting(image_path, model_path=None, processed_img=None):
     """
     Segment painting into meaningful elements using SAM
 
     Args:
         image_path (str): Path to the painting image
         model_path (str): Path to SAM model checkpoint
+        processed_img (numpy.ndarray): Optional pre-processed image to avoid double processing
 
     Returns:
         tuple: (selected_masks, mask_scores, processed_image)
@@ -92,8 +93,13 @@ def segment_painting(image_path, model_path=None):
         if model_path is None:
             raise FileNotFoundError("SAM model not found. Please download sam_vit_h_4b8939.pth to models/ directory")
 
-    # Load and preprocess image
-    processed_img, scale_factor, original_dims = preprocess_image(image_path)
+    # Use provided processed image or load and preprocess
+    if processed_img is not None:
+        # Use the already processed image
+        pass
+    else:
+        # Load and preprocess image
+        processed_img, scale_factor, original_dims = preprocess_image(image_path)
 
     # Convert back to uint8 for SAM (expects 0-255 range)
     sam_input = (processed_img * 255).astype(np.uint8)
@@ -145,7 +151,7 @@ def segment_painting(image_path, model_path=None):
     # Select top masks (3-6 for demo)
     selected_masks = []
     selected_scores = []
-    max_masks = 6
+    max_masks = 4
 
     for idx in sorted_indices[:max_masks]:
         selected_masks.append(mask_arrays[idx])
@@ -162,7 +168,7 @@ def segment_painting(image_path, model_path=None):
 
 def save_segmentation_results(masks, scores, processed_img, output_dir="results/step2_segmentation"):
     """
-    Save segmentation results with timestamp
+    Save segmentation results with timestamp and consistent scaling
 
     Args:
         masks: List of segmentation masks
@@ -173,48 +179,50 @@ def save_segmentation_results(masks, scores, processed_img, output_dir="results/
     Returns:
         str: Path to saved visualization
     """
-    import matplotlib.pyplot as plt
-    from datetime import datetime
+    import sys
     from pathlib import Path
+    import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, create_consistent_background_image,
+        create_consistent_mask_overlay, set_consistent_axis_properties,
+        save_visualization_with_timestamp, hide_unused_subplots,
+        NEON_GREEN_OVERLAY, STANDARD_TARGET_SIZE
+    )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    axes = axes.flatten()
+    # Create consistent background image
+    background_img = create_consistent_background_image(processed_img, STANDARD_TARGET_SIZE)
+    original_shape = processed_img.shape
 
     for i, mask in enumerate(masks):
         if i >= 6:
             break
-        axes[i].imshow(processed_img)
-        axes[i].imshow(mask, alpha=0.5, cmap='viridis')
-        axes[i].set_title(f'Mask {i+1} (salience: {scores[i]["salience"]:.3f})')
-        axes[i].axis('off')
+        
+        # Show consistent background
+        axes[i].imshow(background_img)
+        
+        # Create consistent mask overlay
+        mask_overlay = create_consistent_mask_overlay(
+            mask, original_shape, STANDARD_TARGET_SIZE, NEON_GREEN_OVERLAY
+        )
+        axes[i].imshow(mask_overlay)
+        
+        # Set consistent axis properties
+        title = f'Mask {i+1} (salience: {scores[i]["salience"]:.3f})'
+        set_consistent_axis_properties(axes[i], title, STANDARD_TARGET_SIZE)
 
     # Hide unused subplots
-    for i in range(len(masks), 6):
-        axes[i].axis('off')
+    hide_unused_subplots(axes, len(masks))
 
-    plt.suptitle(f'Segmentation Results - {timestamp}', fontsize=16)
+    plt.suptitle(f'Step 2: Segmentation Results', fontsize=16)
     plt.tight_layout()
 
-    # Determine output path
-    results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step2_segmentation")
-    if not results_dir.exists():
-        results_dir = Path("../results/step2_segmentation")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
-
-    # Create directory if it doesn't exist
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f'segmentation_results_{timestamp}.png'
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"   💾 Saved segmentation visualization: {output_path}")
-
-    return str(output_path)
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'segmentation_results')
 
 if __name__ == "__main__":
     # Test segmentation on monet.jpeg

@@ -33,6 +33,180 @@ except ImportError:
     SCIPY_AVAILABLE = False
     print("Warning: scipy not available. Install with: pip install scipy")
 
+def vectorize_outline_stroke(stroke, max_error=1.0):
+    """
+    Vectorize a single outline stroke using Douglas-Peucker simplification
+    
+    Args:
+        stroke: Stroke dictionary with 'path' key
+        max_error: Maximum simplification error in pixels
+    
+    Returns:
+        dict: Vectorized stroke with simplified path
+    """
+    path = stroke['path']
+    
+    if len(path) < 3:
+        # Too few points to simplify
+        return {
+            **stroke,
+            'original_path': path,
+            'simplified_path': path,
+            'compression_ratio': 1.0,
+            'simplification_error': 0.0,
+            'num_points_original': len(path),
+            'num_points_simplified': len(path)
+        }
+    
+    # Apply Douglas-Peucker simplification
+    if RDP_AVAILABLE:
+        try:
+            simplified_path = rdp(path, epsilon=max_error)
+        except:
+            # Fallback to OpenCV if rdp fails
+            simplified_path = cv2.approxPolyDP(
+                path.astype(np.int32), max_error, closed=stroke.get('is_closed', True)
+            ).reshape(-1, 2)
+    else:
+        # Use OpenCV Douglas-Peucker
+        simplified_path = cv2.approxPolyDP(
+            path.astype(np.int32), max_error, closed=stroke.get('is_closed', True)
+        ).reshape(-1, 2)
+    
+    # Calculate compression metrics
+    original_points = len(path)
+    simplified_points = len(simplified_path)
+    compression_ratio = original_points / simplified_points if simplified_points > 0 else 1.0
+    
+    # Calculate average error (simplified)
+    avg_error = max_error  # Approximation since exact calculation is expensive
+    
+    return {
+        **stroke,
+        'original_path': path,
+        'simplified_path': simplified_path.astype(np.float32),
+        'compression_ratio': compression_ratio,
+        'simplification_error': avg_error,
+        'num_points_original': original_points,
+        'num_points_simplified': simplified_points,
+        'method': 'douglas_peucker'
+    }
+
+def vectorize_outline_stroke_plan(stroke_plan, max_error=1.0):
+    """
+    Vectorize all strokes in an outline stroke plan
+    
+    Args:
+        stroke_plan: Stroke plan from create_contour_stroke_plan()
+        max_error: Maximum simplification error in pixels
+    
+    Returns:
+        dict: Vectorized stroke plan
+    """
+    if stroke_plan is None:
+        return None
+    
+    vectorized_strokes = []
+    total_original_points = 0
+    total_simplified_points = 0
+    total_error = 0
+    
+    for stroke in stroke_plan['strokes']:
+        vectorized_stroke = vectorize_outline_stroke(stroke, max_error)
+        vectorized_strokes.append(vectorized_stroke)
+        
+        total_original_points += vectorized_stroke['num_points_original']
+        total_simplified_points += vectorized_stroke['num_points_simplified']
+        total_error += vectorized_stroke['simplification_error']
+    
+    # Calculate overall statistics
+    avg_compression = total_original_points / total_simplified_points if total_simplified_points > 0 else 1.0
+    avg_error = total_error / len(vectorized_strokes) if vectorized_strokes else 0.0
+    
+    # Create compatible structure for downstream processing
+    # Convert outline strokes to semantic phase format expected by sampling/color detection
+    boundary_strokes = []
+    for stroke in vectorized_strokes:
+        # Convert to format expected by later steps
+        compatible_stroke = {
+            'original_points': stroke['original_path'],
+            'simplified_points': stroke['simplified_path'],
+            'vectorized_points': stroke['simplified_path'],  # Required by sampling step
+            'length': stroke['length'],
+            'is_closed': stroke.get('is_closed', True),
+            'compression_ratio': stroke['compression_ratio'],
+            'simplification_error': stroke['simplification_error'],
+            'success': True,
+            'phase': 'boundary',  # All outline strokes are boundary strokes
+            'stroke_id': stroke['id'],
+            'method': 'outline_tracing'
+        }
+        boundary_strokes.append(compatible_stroke)
+    
+    # Return in semantic phase structure expected by sampling step
+    return {
+        'boundary': boundary_strokes,
+        'internal': [],  # No internal strokes in outline-only mode
+        'detail': [],    # No detail strokes in outline-only mode
+        'method': 'outline_vectorization',
+        'metadata': {
+            'total_strokes': len(vectorized_strokes),
+            'total_points_original': total_original_points,
+            'total_points_simplified': total_simplified_points,
+            'average_compression': avg_compression,
+            'average_error': avg_error,
+            'max_error_threshold': max_error
+        },
+        'stats': stroke_plan['stats']  # Preserve original stats
+    }
+
+def process_all_outline_vectorizations(stroke_plans, max_error=1.0):
+    """
+    Process all outline stroke plans for vectorization
+    
+    Args:
+        stroke_plans: List of outline stroke plans
+        max_error: Maximum simplification error in pixels
+    
+    Returns:
+        list: List of vectorized stroke plans
+    """
+    print(f"   🔧 Vectorizing {len(stroke_plans)} outline stroke plans (max error: {max_error}px)...")
+    
+    vectorized_results = []
+    total_strokes = 0
+    total_original_points = 0
+    total_simplified_points = 0
+    
+    for i, stroke_plan in enumerate(stroke_plans):
+        print(f"   🔧 Vectorizing stroke plan {i+1}/{len(stroke_plans)}...")
+        
+        vectorized_plan = vectorize_outline_stroke_plan(stroke_plan, max_error)
+        
+        if vectorized_plan is not None:
+            vectorized_results.append(vectorized_plan)
+            metadata = vectorized_plan['metadata']
+            stroke_count = metadata['total_strokes']
+            total_strokes += stroke_count
+            total_original_points += metadata['total_points_original']
+            total_simplified_points += metadata['total_points_simplified']
+            
+            print(f"      📊 Strokes: {stroke_count}")
+            print(f"      📉 Compression: {metadata['average_compression']:.2f}x ({metadata['total_points_original']} → {metadata['total_points_simplified']} points)")
+            print(f"      📏 Avg error: {metadata['average_error']:.2f} pixels")
+        else:
+            print(f"      ⚠️  No vectorization created, skipping...")
+            vectorized_results.append(None)
+    
+    successful_vectorizations = len([r for r in vectorized_results if r is not None])
+    overall_compression = total_original_points / total_simplified_points if total_simplified_points > 0 else 1.0
+    
+    print(f"   ✅ Success: {successful_vectorizations}/{len(stroke_plans)} vectorizations")
+    print(f"   🔧 Total strokes: {total_strokes}")
+    print(f"   📉 Overall compression: {overall_compression:.2f}x ({total_original_points:,} → {total_simplified_points:,} points)")
+    
+    return vectorized_results
+
 def simplify_polyline_rdp(pts, epsilon=2.0):
     """
     Simplify polyline using RDP (Ramer-Douglas-Peucker) algorithm
@@ -485,7 +659,7 @@ def process_all_vectorizations(stroke_graphs, method='adaptive', max_error=1.0):
 
 def save_vectorization_results(vectorized_results, output_dir="results/step5_vectorization"):
     """
-    Save vectorization visualization and results
+    Save vectorization visualization and results with consistent scaling
 
     Args:
         vectorized_results: List of vectorization results
@@ -494,14 +668,20 @@ def save_vectorization_results(vectorized_results, output_dir="results/step5_vec
     Returns:
         str: Path to saved visualization
     """
+    import sys
+    from pathlib import Path
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, set_consistent_axis_properties,
+        save_visualization_with_timestamp, hide_unused_subplots,
+        normalize_coordinates_to_display, SEMANTIC_COLORS, SEMANTIC_ALPHAS,
+        STANDARD_TARGET_SIZE
+    )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create figure
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
 
     valid_results = [r for r in vectorized_results if r is not None]
 
@@ -511,11 +691,25 @@ def save_vectorization_results(vectorized_results, output_dir="results/step5_vec
 
         ax = axes[i]
 
-        # Color scheme for semantic phases
-        colors = {'boundary': 'red', 'internal': 'blue', 'detail': 'green'}
-        alphas = {'boundary': 0.8, 'internal': 0.6, 'detail': 0.4}
+        # Determine original shape from first available stroke points
+        original_shape = None
+        for phase_name in ['boundary', 'internal', 'detail']:
+            phase_strokes = result[phase_name]
+            for stroke in phase_strokes:
+                if len(stroke['original_points']) > 0:
+                    # Estimate original shape from coordinate ranges
+                    all_points = stroke['original_points']
+                    max_y = np.max(all_points[:, 0]) if len(all_points) > 0 else STANDARD_TARGET_SIZE
+                    max_x = np.max(all_points[:, 1]) if len(all_points) > 0 else STANDARD_TARGET_SIZE
+                    original_shape = (int(max_y) + 50, int(max_x) + 50)  # Add padding
+                    break
+            if original_shape:
+                break
+        
+        if original_shape is None:
+            original_shape = (STANDARD_TARGET_SIZE, STANDARD_TARGET_SIZE)
 
-        # Plot each semantic phase
+        # Plot each semantic phase with consistent scaling
         for phase_name in ['boundary', 'internal', 'detail']:
             phase_strokes = result[phase_name]
 
@@ -524,34 +718,41 @@ def save_vectorization_results(vectorized_results, output_dir="results/step5_vec
                 vectorized_pts = stroke['vectorized_points']
 
                 if len(original_pts) > 0 and len(vectorized_pts) > 0:
-                    color = colors[phase_name]
-                    alpha = alphas[phase_name]
+                    color = SEMANTIC_COLORS[phase_name]
+                    alpha = SEMANTIC_ALPHAS[phase_name]
 
-                    # Plot original points as thin gray line
-                    ax.plot(original_pts[:, 1], original_pts[:, 0],
-                           color='lightgray', linewidth=0.5, alpha=0.5)
+                    # Scale coordinates to consistent size
+                    scaled_original = normalize_coordinates_to_display(
+                        original_pts, original_shape, STANDARD_TARGET_SIZE
+                    )
+                    scaled_vectorized = normalize_coordinates_to_display(
+                        vectorized_pts, original_shape, STANDARD_TARGET_SIZE
+                    )
 
-                    # Plot vectorized result as colored line
-                    ax.plot(vectorized_pts[:, 1], vectorized_pts[:, 0],
-                           color=color, linewidth=2, alpha=alpha)
+                    if len(scaled_original) > 0 and len(scaled_vectorized) > 0:
+                        # Plot original points as thin gray line
+                        ax.plot(scaled_original[:, 1], scaled_original[:, 0],
+                               color='lightgray', linewidth=0.5, alpha=0.5)
 
-                    # Mark control points
-                    ax.scatter(vectorized_pts[:, 1], vectorized_pts[:, 0],
-                             c=color, s=8, alpha=alpha, zorder=5)
+                        # Plot vectorized result as colored line
+                        ax.plot(scaled_vectorized[:, 1], scaled_vectorized[:, 0],
+                               color=color, linewidth=2, alpha=alpha)
+
+                        # Mark control points
+                        ax.scatter(scaled_vectorized[:, 1], scaled_vectorized[:, 0],
+                                 c=color, s=8, alpha=alpha, zorder=5)
 
         # Set title with statistics
         meta = result['metadata']
-        title = f'Graph {i+1}: Vectorized\n'
-        title += f'{meta["total_strokes"]} strokes, {meta["average_compression"]:.2f}x compression\n'
-        title += f'Error: {meta["average_error"]:.1f}px, Success: {meta["successful_vectorizations"]}/{meta["total_strokes"]}'
+        title = (f'Graph {i+1}: Vectorized\n'
+                f'{meta["total_strokes"]} strokes, {meta["average_compression"]:.2f}x compression\n'
+                f'Error: {meta["average_error"]:.1f}px, Success: {meta["successful_vectorizations"]}/{meta["total_strokes"]}')
 
-        ax.set_title(title, fontsize=10)
-        ax.axis('off')
-        ax.invert_yaxis()  # Match image coordinates
+        # Set consistent axis properties
+        set_consistent_axis_properties(ax, title, STANDARD_TARGET_SIZE)
 
     # Hide unused subplots
-    for i in range(len(valid_results), 6):
-        axes[i].axis('off')
+    hide_unused_subplots(axes, len(valid_results))
 
     # Add legend
     legend_elements = [
@@ -562,25 +763,8 @@ def save_vectorization_results(vectorized_results, output_dir="results/step5_vec
     ]
     fig.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, 0.02), ncol=4)
 
-    plt.suptitle(f'Step 5: Vectorization Results - {timestamp}', fontsize=16)
+    plt.suptitle(f'Step 5: Vectorization Results', fontsize=16)
     plt.tight_layout()
 
-    # Determine output path and create directory
-    results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step5_vectorization")
-    if not results_dir.exists():
-        results_dir = Path("../results/step5_vectorization")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
-
-    # Create directory if it doesn't exist
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f"vectorization_results_{timestamp}.png"
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"   💾 Saved vectorization visualization: {output_path}")
-
-    return output_path
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'vectorization_results')

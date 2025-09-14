@@ -1,0 +1,3 @@
+# Robotic Brush Simulator Dependencies
+pygame>=2.5.0
+

@@ -37,36 +37,39 @@ def calculate_scale_factor(image_width_px, canvas_width_mm=CANVAS_SIZE_MM):
     """
     return canvas_width_mm / image_width_px
 
-def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM):
+def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0)):
     """
-    Convert pixel coordinates to millimeters with coordinate system flip
+    Convert pixel coordinates to millimeters
     
-    Converts from pixel coordinates (0,0 at top-left, Y increases downward)
-    to millimeter coordinates (0,0 at top-left, Y increases downward)
+    Converts from sknw coordinates (y,x format) to millimeter coordinates (x,y format)
+    and flips Y-axis to match expected orientation, applying mask offset
 
     Args:
-        pts_px: numpy.ndarray - Points in pixel coordinates
+        pts_px: numpy.ndarray - Points in pixel coordinates (y,x format from sknw)
         scale_mm_per_px: float - Scale factor from calculate_scale_factor
         canvas_height_mm: float - Canvas height for coordinate system
+        offset: tuple - (x_offset, y_offset) from mask cropping
 
     Returns:
-        numpy.ndarray: Points in millimeter coordinates (0,0 at top-left)
+        numpy.ndarray: Points in millimeter coordinates (x,y format)
     """
     if len(pts_px) == 0:
         return pts_px
 
-    # Convert to mm
-    pts_mm = pts_px * scale_mm_per_px
-    
-    # Flip Y-axis so (0,0) is at top-left instead of bottom-left
-    # Original system: (0,0) bottom-left, Y increases upward
-    # New system: (0,0) top-left, Y increases downward
-    if len(pts_mm.shape) == 2 and pts_mm.shape[1] >= 2:
+    # sknw returns points in (y,x) format, but we need (x,y) for plotting
+    # Swap coordinates: pts_px[:, 0] is y, pts_px[:, 1] is x
+    if len(pts_px.shape) == 2 and pts_px.shape[1] >= 2:
+        # Swap x and y coordinates and apply offset to place in original image coordinates
+        # offset is (x_offset, y_offset) so we add offset[0] to x and offset[1] to y
+        pts_mm = np.column_stack([pts_px[:, 1] + offset[0], pts_px[:, 0] + offset[1]]) * scale_mm_per_px
+        # Flip Y-axis to correct orientation (sknw Y increases downward, we want upward)
         pts_mm[:, 1] = canvas_height_mm - pts_mm[:, 1]
+    else:
+        pts_mm = pts_px * scale_mm_per_px
     
     return pts_mm
 
-def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_mm=CANVAS_SIZE_MM):
+def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_mm=CANVAS_SIZE_MM, offset=(0, 0)):
     """
     Resample polyline with uniform spacing in millimeters
 
@@ -75,15 +78,16 @@ def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_
         scale_mm_per_px: float - Scale factor
         spacing_mm: float - Desired spacing between points in mm
         canvas_height_mm: float - Canvas height for coordinate conversion
+        offset: tuple - (x_offset, y_offset) from mask cropping
 
     Returns:
         numpy.ndarray: Uniformly spaced points in mm coordinates
     """
     if len(pts_px) < 2:
-        return convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm)
+        return convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset)
 
-    # Convert to mm with coordinate flip
-    pts_mm = convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm)
+    # Convert to mm with coordinate flip and offset
+    pts_mm = convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm, offset)
 
     # Calculate cumulative distances
     deltas = np.linalg.norm(np.diff(pts_mm, axis=0), axis=1)
@@ -221,7 +225,7 @@ def calculate_sampling_statistics(original_pts, sampled_pts_mm, scale_mm_per_px)
         'length_error_percent': (length_error_mm / max(0.1, original_length_mm)) * 100
     }
 
-def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_length_mm=0.5):
+def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_length_mm=0.5, offset=(0, 0)):
     """
     Sample a single stroke sequence from Step 5 output
 
@@ -230,6 +234,7 @@ def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_l
         scale_mm_per_px: float - Scale factor
         spacing_mm: float - Desired spacing in mm
         min_length_mm: float - Minimum segment length
+        offset: tuple - (x_offset, y_offset) from mask cropping
 
     Returns:
         dict: Sampled stroke with metadata
@@ -247,8 +252,8 @@ def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_l
         }
 
     try:
-        # Resample with uniform spacing
-        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm, CANVAS_SIZE_MM)
+        # Resample with uniform spacing, applying offset
+        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm, CANVAS_SIZE_MM, offset)
 
         # Handle short segments
         sampled_pts_mm = handle_short_segments(sampled_pts_mm, min_length_mm)
@@ -290,13 +295,14 @@ def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_l
             'success': False
         }
 
-def sample_vectorized_results(vectorized_results, image_shape, spacing_mm=1.0,
+def sample_vectorized_results(vectorized_results, stroke_graphs, image_shape, spacing_mm=1.0,
                             canvas_width_mm=CANVAS_SIZE_MM, min_length_mm=0.5):
     """
     Sample all vectorized results from Step 5
 
     Args:
         vectorized_results: list - Results from Step 5 vectorization
+        stroke_graphs: list - Stroke graph objects with offset information
         image_shape: tuple - (height, width) of processed image
         spacing_mm: float - Desired point spacing in mm
         canvas_width_mm: float - Physical canvas width in mm
@@ -350,6 +356,12 @@ def sample_vectorized_results(vectorized_results, image_shape, spacing_mm=1.0,
 
         print(f"   🎯 Sampling graph {i+1}...")
 
+        # Get offset from corresponding stroke graph
+        offset = (0, 0)  # Default offset
+        if i < len(stroke_graphs) and stroke_graphs[i] is not None:
+            if hasattr(stroke_graphs[i], 'offset'):
+                offset = stroke_graphs[i].offset
+
         graph_result = {
             'boundary': [],
             'internal': [],
@@ -359,7 +371,8 @@ def sample_vectorized_results(vectorized_results, image_shape, spacing_mm=1.0,
                 'total_strokes': 0,
                 'successful_samplings': 0,
                 'total_length_mm': 0.0,
-                'closed_loops': 0
+                'closed_loops': 0,
+                'offset': offset
             }
         }
 
@@ -369,7 +382,7 @@ def sample_vectorized_results(vectorized_results, image_shape, spacing_mm=1.0,
 
             for stroke_result in phase_strokes:
                 sampled_stroke = sample_stroke_sequence(stroke_result, scale_mm_per_px,
-                                                      spacing_mm, min_length_mm)
+                                                      spacing_mm, min_length_mm, offset)
 
                 graph_result[phase_name].append(sampled_stroke)
 
@@ -438,13 +451,14 @@ def sample_vectorized_results(vectorized_results, image_shape, spacing_mm=1.0,
 
     return sampled_results
 
-def process_all_sampling(vectorized_results, image_shape, spacing_mm=1.0,
+def process_all_sampling(vectorized_results, stroke_graphs, image_shape, spacing_mm=1.0,
                         canvas_width_mm=CANVAS_SIZE_MM, min_length_mm=0.5):
     """
     Process all vectorized results through sampling
 
     Args:
         vectorized_results: list - Results from Step 5
+        stroke_graphs: list - Stroke graph objects with offset information
         image_shape: tuple - Image dimensions
         spacing_mm: float - Desired spacing in mm
         canvas_width_mm: float - Canvas size in mm
@@ -456,7 +470,7 @@ def process_all_sampling(vectorized_results, image_shape, spacing_mm=1.0,
     print(f"   📐 Canvas: {canvas_width_mm}mm x {canvas_width_mm}mm")
     print(f"   📏 Target spacing: {spacing_mm}mm")
 
-    results = sample_vectorized_results(vectorized_results, image_shape,
+    results = sample_vectorized_results(vectorized_results, stroke_graphs, image_shape,
                                       spacing_mm, canvas_width_mm, min_length_mm)
 
     # Print overall statistics
@@ -483,7 +497,11 @@ def save_sampling_results(sampling_results, output_dir="results/step6_sampling")
     Returns:
         str: Path to saved visualization
     """
+    import sys
+    from pathlib import Path
     import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    from visualization_utils import SEMANTIC_COLORS, SEMANTIC_ALPHAS
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -501,9 +519,8 @@ def save_sampling_results(sampling_results, output_dir="results/step6_sampling")
 
         ax = axes[i]
 
-        # Color scheme for semantic phases
-        colors = {'boundary': 'red', 'internal': 'blue', 'detail': 'green'}
-        alphas = {'boundary': 0.8, 'internal': 0.6, 'detail': 0.4}
+        # Import consistent colors (moved outside loop for efficiency)
+        pass
 
         # Plot canvas boundaries
         ax.plot([0, canvas_size, canvas_size, 0, 0],
@@ -517,8 +534,8 @@ def save_sampling_results(sampling_results, output_dir="results/step6_sampling")
             for stroke in phase_strokes:
                 if stroke['success'] and len(stroke['sampled_points_mm']) > 1:
                     points_mm = stroke['sampled_points_mm']
-                    color = colors[phase_name]
-                    alpha = alphas[phase_name]
+                    color = SEMANTIC_COLORS[phase_name]
+                    alpha = SEMANTIC_ALPHAS[phase_name]
 
                     # Plot stroke path
                     ax.plot(points_mm[:, 0], points_mm[:, 1],
@@ -548,6 +565,7 @@ def save_sampling_results(sampling_results, output_dir="results/step6_sampling")
         ax.grid(True, alpha=0.3)
         ax.set_xlabel('X (mm)')
         ax.set_ylabel('Y (mm)')
+        ax.invert_yaxis()  # Match image coordinates
 
     # Hide unused subplots
     for i in range(len(valid_graphs), 6):
@@ -564,7 +582,7 @@ def save_sampling_results(sampling_results, output_dir="results/step6_sampling")
     ]
     fig.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, 0.02), ncol=3)
 
-    plt.suptitle(f'Step 6: Millimeter Sampling Results - {timestamp}', fontsize=16)
+    plt.suptitle(f'Step 6: Millimeter Sampling Results', fontsize=16)
     plt.tight_layout()
 
     # Determine output path and create directory

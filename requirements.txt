@@ -5,6 +5,7 @@ torchvision>=0.10.0
 torchaudio>=2.0.0
 segment-anything>=1.0
 scikit-image>=0.18.0
+scikit-learn>=1.0.0
 networkx>=2.6.0
 matplotlib>=3.5.0
 scipy>=1.7.0

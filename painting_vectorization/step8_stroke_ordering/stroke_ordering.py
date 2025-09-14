@@ -31,6 +31,11 @@ from constants import (
     CANVAS_SIZE_MM, CANVAS_WIDTH_MM, CANVAS_HEIGHT_MM,
     ROBOT_CONFIG
 )
+from .stroke_consolidation import (
+    consolidate_all_mask_strokes, 
+    analyze_stroke_distribution, 
+    calculate_stroke_length
+)
 
 class StrokeData:
     """
@@ -112,7 +117,7 @@ class StrokeData:
         self.pen_lifts.append(pen_lift)
         self.meta['total_pen_lifts'] += 1
         self.meta['estimated_travel_distance_mm'] += travel_distance_mm
-        self.meta['estimated_duration_s'] += pen_lift['duration_s']
+        # Duration calculations removed - handled by firmware engineer
 
 def flatten_strokes_from_results(color_detection_results: Dict) -> StrokeData:
     """
@@ -156,7 +161,10 @@ def flatten_strokes_from_results(color_detection_results: Dict) -> StrokeData:
                     points = points_mm
                 start_pos = points[0]
                 end_pos = points[-1]
+                # Fix the length calculation bug
                 length_mm = stroke.get('total_length_mm', 0.0)
+                if length_mm == 0.0:
+                    length_mm = calculate_stroke_length(points)
 
                 # Stroke calculations removed - handled by firmware engineer
                 stroke_data.add_stroke(
@@ -416,6 +424,85 @@ def calculate_pen_lifts(stroke_data: StrokeData, min_travel_distance_mm: float =
 
 # Timing and curvature calculation functions removed - handled by firmware engineer
 
+def optimize_hybrid(stroke_data: StrokeData) -> StrokeData:
+    """
+    Hybrid optimization: semantic ordering with spatial optimization within phases
+    
+    This approach maintains artistic intent while optimizing travel within each semantic phase.
+    """
+    print("   🎯 Optimizing stroke order with fast hybrid strategy...")
+    
+    # Group strokes by semantic phase
+    phase_groups = {'boundary': [], 'internal': [], 'detail': []}
+    
+    for stroke in stroke_data.strokes:
+        phase = stroke.get('phase', 'detail')
+        if phase in phase_groups:
+            phase_groups[phase].append(stroke)
+        else:
+            phase_groups['detail'].append(stroke)  # Default to detail
+    
+    # Optimize each phase separately with size-based strategy
+    optimized_strokes = []
+    
+    for phase_name in ['boundary', 'internal', 'detail']:
+        strokes = phase_groups[phase_name]
+        if not strokes:
+            continue
+            
+        if len(strokes) > 20:
+            # Use fast spatial sorting for large groups
+            print(f"   ⚡ Using fast spatial sorting for {len(strokes)} {phase_name} strokes")
+            sorted_strokes = spatial_sort_strokes(strokes)
+        else:
+            # Use greedy optimization for smaller groups
+            sorted_strokes = greedy_sort_strokes(strokes)
+            
+        optimized_strokes.extend(sorted_strokes)
+    
+    # Update stroke order indices
+    for i, stroke in enumerate(optimized_strokes):
+        stroke['order_index'] = i
+    
+    stroke_data.strokes = optimized_strokes
+    
+    # Calculate pen lifts
+    calculate_pen_lifts(stroke_data)
+    
+    return stroke_data
+
+def spatial_sort_strokes(strokes):
+    """Sort strokes by spatial proximity using simple distance sorting"""
+    if not strokes:
+        return strokes
+        
+    sorted_strokes = []
+    remaining = strokes.copy()
+    
+    # Start with the leftmost, topmost stroke
+    current = min(remaining, key=lambda s: (s['start_pos'][0], s['start_pos'][1]))
+    sorted_strokes.append(current)
+    remaining.remove(current)
+    
+    # Greedily add nearest strokes
+    while remaining:
+        current_pos = sorted_strokes[-1]['end_pos']
+        nearest = min(remaining, key=lambda s: 
+                     ((s['start_pos'][0] - current_pos[0])**2 + 
+                      (s['start_pos'][1] - current_pos[1])**2)**0.5)
+        sorted_strokes.append(nearest)
+        remaining.remove(nearest)
+    
+    return sorted_strokes
+
+def greedy_sort_strokes(strokes):
+    """Sort strokes using greedy nearest-neighbor for small groups"""
+    if not strokes:
+        return strokes
+        
+    # For small groups, use the same spatial sort (keep it simple)
+    return spatial_sort_strokes(strokes)
+
 def optimize_by_semantic_order(stroke_data: StrokeData) -> StrokeData:
     """
     Maintain semantic ordering: boundary → internal → detail strokes
@@ -552,6 +639,27 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
 
     # Step 3: Group strokes by mask for narration timing
     mask_stroke_arrays = group_strokes_by_mask(optimized_data)
+    
+    # Step 4: Consolidate fragmented strokes for better tactile feedback
+    print("🔗 Consolidating strokes for tactile feedback...")
+    mask_stroke_arrays = consolidate_all_mask_strokes(
+        mask_stroke_arrays, 
+        max_gap_mm=2.0,  # Bridge small gaps
+        min_consolidated_length_mm=3.0  # Prefer strokes 3mm+ for tactile clarity
+    )
+    
+    # Analyze consolidated stroke distribution
+    analysis = analyze_stroke_distribution(mask_stroke_arrays)
+    if analysis:
+        print(f"📊 Tactile Analysis:")
+        print(f"   • Total strokes: {analysis['total_strokes']} (avg {analysis['avg_length_mm']:.1f}mm)")
+        print(f"   • Distribution: {analysis['length_distribution']['very_short']} tiny, " +
+              f"{analysis['length_distribution']['medium']} medium, " +
+              f"{analysis['length_distribution']['long']} long strokes")
+        
+        # Show phase breakdown
+        for phase, stats in analysis['phase_distribution'].items():
+            print(f"   • {phase.title()}: {stats['count']} strokes, {stats['avg_length_mm']:.1f}mm avg")
 
     # Step 4: Generate comprehensive statistics
     statistics = {
@@ -651,7 +759,7 @@ def export_gcode(stroke_data: StrokeData, filepath: str):
         "; Robotic Painting G-code",
         f"; Generated: {stroke_data.meta['processing_timestamp']}",
         f"; Total strokes: {stroke_data.meta['total_strokes']}",
-        f"; Estimated time: {stroke_data.meta['estimated_duration_s']:.1f}s",
+        f"; Ready for firmware timing",
         "",
         "G21 ; Set units to millimeters",
         "G90 ; Absolute positioning",
@@ -776,7 +884,7 @@ def plot_statistics(statistics: Dict, ax):
 Drawing Length: {statistics['total_length_mm']:.1f} mm
 Travel Distance: {statistics['estimated_travel_distance_mm']:.1f} mm
 Pen Lifts: {statistics['total_pen_lifts']}
-Estimated Time: {statistics['estimated_duration_s']:.1f} s ({statistics['estimated_duration_s']/60:.1f} min)
+Ready for firmware timing calculations
 Optimization: {statistics['optimization_method']}"""
 
     ax.text(0.1, 0.9, stats_text, transform=ax.transAxes,

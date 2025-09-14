@@ -603,6 +603,82 @@ def extract_skeleton(edges):
 
     return skeleton
 
+def extract_mask_outline_only(mask, max_contours=4):
+    """
+    Extract only the outline/contour of a SAM mask for pure outline tracing
+    
+    Args:
+        mask: Binary SAM mask (boolean array)
+        max_contours: Maximum number of contours per mask (default 4)
+    
+    Returns:
+        dict: Dictionary containing outline extraction results
+            - contours: List of contour data (max 4)
+            - stats: Extraction statistics
+            - method: 'outline_only'
+    """
+    # Convert mask to uint8 for OpenCV
+    mask_uint8 = mask.astype(np.uint8) * 255
+    
+    # Find contours using external retrieval (only outer boundaries)
+    contours, hierarchy = cv2.findContours(
+        mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    
+    if len(contours) == 0:
+        return None
+    
+    # Process and filter contours
+    mask_area = np.sum(mask)
+    processed_contours = []
+    
+    for contour in contours:
+        # Filter by minimum area (remove noise)
+        area = cv2.contourArea(contour)
+        if area < mask_area * 0.01:  # Skip contours < 1% of mask area
+            continue
+            
+        # Simplify contour for smoother drawing
+        epsilon = 0.002 * cv2.arcLength(contour, True)  # 0.2% approximation
+        simplified = cv2.approxPolyDP(contour, epsilon, True)
+        
+        # Calculate perimeter
+        perimeter = cv2.arcLength(simplified, True)
+        
+        processed_contours.append({
+            'contour': simplified,
+            'area': area,
+            'perimeter': perimeter,
+            'is_closed': True,  # Mask contours are always closed
+            'points': simplified.reshape(-1, 2)
+        })
+    
+    # Sort by area (largest first) and limit to max_contours
+    processed_contours.sort(key=lambda x: x['area'], reverse=True)
+    selected_contours = processed_contours[:max_contours]
+    
+    # Calculate statistics
+    total_contours = len(selected_contours)
+    total_perimeter = sum(c['perimeter'] for c in selected_contours)
+    total_points = sum(len(c['points']) for c in selected_contours)
+    
+    stats = {
+        'total_contours': total_contours,
+        'total_perimeter': total_perimeter,
+        'total_points': total_points,
+        'avg_perimeter': total_perimeter / total_contours if total_contours > 0 else 0,
+        'mask_area': int(mask_area),
+        'coverage_ratio': total_perimeter / np.sqrt(mask_area) if mask_area > 0 else 0
+    }
+    
+    return {
+        'contours': selected_contours,
+        'stats': stats,
+        'method': 'outline_only',
+        'mask_shape': mask.shape
+    }
+
+
 def extract_edges_from_mask(image, mask, method="adaptive"):
     """
     Extract clean binary line image from a masked region
@@ -671,6 +747,47 @@ def extract_edges_from_mask(image, mask, method="adaptive"):
         'stats': stats
     }
 
+def process_all_masks_outline_only(masks, max_contours_per_mask=4):
+    """
+    Process all SAM masks to extract only their outlines/contours
+    
+    Args:
+        masks: List of binary masks from SAM
+        max_contours_per_mask: Maximum contours per mask (default 4)
+    
+    Returns:
+        list: List of outline extraction results for each mask
+    """
+    print(f"   🎯 Extracting outlines from {len(masks)} masks (max {max_contours_per_mask} contours per mask)...")
+    
+    results = []
+    total_contours = 0
+    
+    for i, mask in enumerate(masks):
+        print(f"   🔍 Processing mask {i+1}/{len(masks)}...")
+        
+        result = extract_mask_outline_only(mask, max_contours=max_contours_per_mask)
+        
+        if result is not None:
+            results.append(result)
+            stats = result['stats']
+            contour_count = stats['total_contours']
+            total_contours += contour_count
+            
+            print(f"      📝 Found {contour_count} contours")
+            print(f"      📏 Total perimeter: {stats['total_perimeter']:.1f}px")
+            print(f"      🎯 Avg perimeter: {stats['avg_perimeter']:.1f}px")
+        else:
+            print(f"      ⚠️  No valid contours found, skipping...")
+            results.append(None)
+    
+    successful_extractions = len([r for r in results if r is not None])
+    print(f"   ✅ Success: {successful_extractions}/{len(masks)} masks")
+    print(f"   📝 Total contours: {total_contours} (avg {total_contours/successful_extractions:.1f} per mask)" if successful_extractions > 0 else "")
+    
+    return results
+
+
 def process_all_masks(image, masks, method="adaptive"):
     """
     Extract edges from all masks
@@ -702,9 +819,96 @@ def process_all_masks(image, masks, method="adaptive"):
 
     return results
 
+def save_outline_results(outline_results, masks, image_shape, output_dir="results/step3_edge_extraction"):
+    """
+    Save outline extraction results with visualization
+    
+    Args:
+        outline_results: List of outline extraction results
+        masks: Original SAM masks
+        image_shape: Shape of the original image
+        output_dir: Directory to save results
+    
+    Returns:
+        str: Path to saved visualization
+    """
+    import sys
+    from pathlib import Path
+    import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, create_consistent_background_image,
+        set_consistent_axis_properties, save_visualization_with_timestamp,
+        hide_unused_subplots, STANDARD_TARGET_SIZE
+    )
+    
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
+    
+    # Create white background for outline visualization
+    background_img = np.ones((STANDARD_TARGET_SIZE, STANDARD_TARGET_SIZE, 3), dtype=np.uint8) * 255
+    
+    for i, result in enumerate(outline_results):
+        if i >= 6:  # Max 6 subplots
+            break
+            
+        ax = axes[i]
+        
+        if result is not None:
+            # Show white background
+            ax.imshow(background_img)
+            
+            # Draw contours on the plot
+            colors = plt.cm.Set1(np.linspace(0, 1, len(result['contours'])))
+            
+            # Scale contours to fit the standard target size
+            h, w = image_shape[:2]
+            scale_x = STANDARD_TARGET_SIZE / w
+            scale_y = STANDARD_TARGET_SIZE / h
+            
+            for j, contour_data in enumerate(result['contours']):
+                points = contour_data['points']
+                
+                # Scale points to target size
+                scaled_points = points.copy().astype(np.float32)
+                scaled_points[:, 0] *= scale_x
+                scaled_points[:, 1] *= scale_y
+                
+                # Draw contour outline
+                if len(scaled_points) > 1:
+                    # Close the contour by adding first point at the end
+                    closed_points = np.vstack([scaled_points, scaled_points[0]])
+                    ax.plot(closed_points[:, 0], closed_points[:, 1], 
+                           color=colors[j], linewidth=2, alpha=0.8)
+                    
+                    # Mark starting point
+                    ax.plot(scaled_points[0, 0], scaled_points[0, 1], 
+                           'go', markersize=6, alpha=0.8)
+            
+            # Set title with statistics
+            stats = result['stats']
+            title = f'Outline {i+1}\n{stats["total_contours"]} contours, {stats["total_perimeter"]:.0f}px'
+        else:
+            # Show empty background for failed extractions
+            ax.imshow(background_img)
+            title = f'Outline {i+1}\nNo contours found'
+        
+        # Set consistent axis properties
+        set_consistent_axis_properties(ax, title, STANDARD_TARGET_SIZE)
+    
+    # Hide unused subplots
+    hide_unused_subplots(axes, len(outline_results))
+    
+    plt.suptitle(f'Step 3: Outline Extraction Results (Outline-Only Mode)', fontsize=16)
+    plt.tight_layout()
+    
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'outline_extraction_results')
+
 def save_edge_results(results, masks, image_shape, output_dir="results/step3_edge_extraction"):
     """
-    Save edge extraction results with timestamp
+    Save edge extraction results with timestamp and consistent scaling
 
     Args:
         results: List of extraction results
@@ -715,15 +919,20 @@ def save_edge_results(results, masks, image_shape, output_dir="results/step3_edg
     Returns:
         str: Path to saved visualization
     """
-    import matplotlib.pyplot as plt
+    import sys
     from pathlib import Path
-    import os
+    import matplotlib.pyplot as plt
+    sys.path.append(str(Path(__file__).parent.parent))
+    
+    from visualization_utils import (
+        get_consistent_figure_layout, set_consistent_axis_properties,
+        save_visualization_with_timestamp, hide_unused_subplots,
+        STANDARD_TARGET_SIZE
+    )
+    import cv2
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create figure
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    axes = axes.flatten()
+    # Create consistent figure layout
+    fig, axes = get_consistent_figure_layout()
 
     valid_results = [r for r in results if r is not None]
 
@@ -733,40 +942,28 @@ def save_edge_results(results, masks, image_shape, output_dir="results/step3_edg
 
         ax = axes[i]
 
-        # Show skeleton on white background
+        # Create skeleton display on white background
         skeleton_display = np.ones(result['cropped_region'].shape[:2], dtype=np.uint8) * 255
         skeleton_display[result['skeleton']] = 0  # Black lines
 
-        ax.imshow(skeleton_display, cmap='gray')
-        ax.set_title(f'Edge Extraction {i+1}\n'
-                    f'Skeleton: {result["stats"]["skeleton_pixels"]} pixels')
-        ax.axis('off')
+        # Resize to consistent target size
+        resized_skeleton = cv2.resize(skeleton_display, (STANDARD_TARGET_SIZE, STANDARD_TARGET_SIZE), 
+                                    interpolation=cv2.INTER_NEAREST)
+
+        ax.imshow(resized_skeleton, cmap='gray', origin='upper')
+        
+        # Set consistent axis properties
+        title = f'Edge Extraction {i+1}\nSkeleton: {result["stats"]["skeleton_pixels"]} pixels'
+        set_consistent_axis_properties(ax, title, STANDARD_TARGET_SIZE)
 
     # Hide unused subplots
-    for i in range(len(valid_results), 6):
-        axes[i].axis('off')
+    hide_unused_subplots(axes, len(valid_results))
 
-    plt.suptitle(f'Edge Extraction Results - {timestamp}', fontsize=16)
+    plt.suptitle(f'Step 3: Edge Extraction Results', fontsize=16)
     plt.tight_layout()
 
-    # Determine output path and create directory
-    results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step3_edge_extraction")
-    if not results_dir.exists():
-        results_dir = Path("../results/step3_edge_extraction")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
-
-    # Create directory if it doesn't exist
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = results_dir / f"edge_extraction_results_{timestamp}.png"
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"   💾 Saved visualization: {output_path}")
-    return output_path
+    # Save with consistent timestamp and path handling
+    return save_visualization_with_timestamp(fig, output_dir, 'edge_extraction_results')
 
 if __name__ == "__main__":
     # Test edge extraction
