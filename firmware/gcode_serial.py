@@ -94,6 +94,10 @@ class GRBLController:
         self._send_and_wait("M3 S0")          # servo1 to 0
         # self._send_and_wait("2 0")          # servo2 to 0
 
+    def deactivate(self):
+        if self._ser:
+            self._send_and_wait("G1 X0 Y0 F10000")  # move to origin
+
     def upCold(self):
         self._send_and_wait("M3 S0")
 

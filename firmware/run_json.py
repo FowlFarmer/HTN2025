@@ -22,7 +22,7 @@ except ImportError as e:
     PAINTING_PROFILES_AVAILABLE = False
 
 # ===== CONFIGURATION: Change this to select different paintings =====
-JSON_FILE = "starry.json"  # Options: starry.json, m3.json, eiffel.json, titanic.json, petronas.json, monalisa.json
+JSON_FILE = input("Enter the JSON file name (without .json extension): ") + ".json"  # Options: starry.json, m3.json, eiffel.json, titanic.json, petronas.json, monalisa.json
 # ================================================================
 
 JSON_PATH = f"painting_vectorization/results/step8_stroke_ordering/{JSON_FILE}"

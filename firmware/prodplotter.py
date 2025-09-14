@@ -56,7 +56,7 @@ class DeltaActuator:
     def downHot(self): self.controller.downHot()
 
     def return_home(self):
-        self.command(0, 0)
+        self.controller.deactivate()
 
     def command(self, x_tl_mm: float, y_tl_mm: float) -> bool:
         """
