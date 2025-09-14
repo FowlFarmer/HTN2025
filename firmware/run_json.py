@@ -4,16 +4,49 @@ import time
 import sys
 import os
 import threading
+import subprocess
 
-# Add the text_to_speech module to path
+# Add the text_to_speech and sentiment_analysis modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'text_to_speech'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'sentiment_analysis'))
 from bob_ross_simple_tts import speak_in_bob_ross_voice
+from main import analyze_image_sentiment_from_url
 
 # Load JSON
 with open("painting_vectorization/results/step8_stroke_ordering/starry.json", "r") as f:
     data = json.load(f)
 
 act = DeltaActuator(observe=True)
+
+# Analyze the starry night image sentiment and start background music
+print("🎭 Analyzing image sentiment for background music selection...")
+starry_image_path = "painting_vectorization/examples/starrynight.jpg"
+try:
+    music_theme = analyze_image_sentiment_from_url(starry_image_path)
+    music_file_path = os.path.join(os.path.dirname(__file__), '..', 'music_player', music_theme.filename)
+    
+    print(f"🎵 Selected music theme: {music_theme.theme_name}")
+    print(f"🎼 Playing background music: {music_theme.filename}")
+    
+    # Start background music in a separate thread
+    def play_background_music():
+        try:
+            # Use afplay to play the music file (macOS)
+            subprocess.run(['afplay', music_file_path], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Could not play background music: {e}")
+        except FileNotFoundError:
+            print(f"Warning: Music file not found: {music_file_path}")
+    
+    music_thread = threading.Thread(target=play_background_music)
+    music_thread.daemon = True  # Thread will close when main program exits
+    music_thread.start()
+    
+except Exception as e:
+    print(f"Warning: Could not analyze sentiment or start music: {e}")
+    print("Continuing without background music...")
+
+print("🎨 Starting painting process...")
 
 # Bob Ross narration for the first three masks
 bob_ross_narrations = [
