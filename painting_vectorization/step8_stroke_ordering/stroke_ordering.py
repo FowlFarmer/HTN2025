@@ -29,7 +29,6 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import (
     CANVAS_SIZE_MM, CANVAS_WIDTH_MM, CANVAS_HEIGHT_MM,
-    DEMO_DURATION_LIMIT_S, STROKE_DURATION_ESTIMATE_S,
     ROBOT_CONFIG
 )
 
@@ -48,24 +47,17 @@ class StrokeData:
             'total_strokes': 0,
             'total_length_mm': 0.0,
             'total_pen_lifts': 0,
-            'estimated_duration_s': 0.0,
             'estimated_travel_distance_mm': 0.0,
             'processing_timestamp': datetime.now().isoformat(),
-            'optimization_method': '',
-            'speed_profile': {
-                'default_speed_mm_s': ROBOT_CONFIG['default_speed_mm_s'],
-                'min_speed_mm_s': ROBOT_CONFIG['min_speed_mm_s'],
-                'max_speed_mm_s': ROBOT_CONFIG['max_speed_mm_s']
-            }
+            'optimization_method': ''
         }
         self.strokes = []
         self.pen_lifts = []
 
     def add_stroke(self, stroke_id: int, element_id: int, warmth: int,
                    points: List[List[float]], length_mm: float,
-                   duration_s: float, start_pos: List[float],
-                   end_pos: List[float], phase: str = "unknown",
-                   **kwargs):
+                   start_pos: List[float], end_pos: List[float], 
+                   phase: str = "unknown", **kwargs):
         """
         Add a stroke to the data structure
 
@@ -75,7 +67,6 @@ class StrokeData:
             warmth: Color temperature (0=warm, 1=cool)
             points: List of [x_mm, y_mm] coordinates
             length_mm: Total stroke length in millimeters
-            duration_s: Expected execution duration in seconds
             start_pos: Starting position [x_mm, y_mm]
             end_pos: Ending position [x_mm, y_mm]
             phase: Semantic phase ('boundary', 'internal', 'detail')
@@ -97,10 +88,9 @@ class StrokeData:
         self.strokes.append(stroke)
         self.meta['total_strokes'] += 1
         self.meta['total_length_mm'] += length_mm
-        self.meta['estimated_duration_s'] += duration_s
 
     def add_pen_lift(self, from_stroke_id: int, to_stroke_id: int,
-                     travel_distance_mm: float, height_mm: float = 15.0):
+                     travel_distance_mm: float, height_mm: float = ROBOT_CONFIG['pen_lift_height_mm']):
         """
         Add a pen lift instruction between strokes
 
@@ -168,20 +158,13 @@ def flatten_strokes_from_results(color_detection_results: Dict) -> StrokeData:
                 end_pos = points[-1]
                 length_mm = stroke.get('total_length_mm', 0.0)
 
-                # Calculate timing based on stroke characteristics
-                duration_s, speed_mm_s = calculate_stroke_timing(
-                    points,
-                    stroke.get('is_closed_loop', False)
-                )
-
-                # Calculate average curvature
+                # Stroke calculations removed - handled by firmware engineer
                 stroke_data.add_stroke(
                     stroke_id=stroke_id,
                     element_id=element_id,
                     warmth=warmth,
                     points=points,
                     length_mm=length_mm,
-                    duration_s=0.0,  # Placeholder, not used in output
                     start_pos=start_pos,
                     end_pos=end_pos,
                     phase=phase_name
@@ -191,7 +174,6 @@ def flatten_strokes_from_results(color_detection_results: Dict) -> StrokeData:
 
     print(f"   📊 Flattened {stroke_data.meta['total_strokes']} strokes from {len([g for g in enhanced_sampling['sampled_graphs'] if g is not None])} elements")
     print(f"   📏 Total drawing length: {stroke_data.meta['total_length_mm']:.1f}mm")
-    print(f"   ⏱️  Estimated drawing time: {stroke_data.meta['estimated_duration_s']:.1f}s")
 
     return stroke_data
 
@@ -404,7 +386,7 @@ def calculate_total_distance(path: List[int], pos_lookup: Dict[int, List[float]]
 
     return total_distance
 
-def calculate_pen_lifts(stroke_data: StrokeData, min_travel_distance_mm: float = 2.0):
+def calculate_pen_lifts(stroke_data: StrokeData, min_travel_distance_mm: float = ROBOT_CONFIG['min_travel_distance_mm']):
     """
     Calculate pen lifts between consecutive strokes
 
@@ -432,92 +414,7 @@ def calculate_pen_lifts(stroke_data: StrokeData, min_travel_distance_mm: float =
                 travel_distance_mm=travel_distance
             )
 
-def calculate_stroke_timing(points: List[List[float]], is_closed_loop: bool = False,
-                          base_speed_mm_s: float = 40.0, min_speed_mm_s: float = 25.0,
-                          max_speed_mm_s: float = 60.0) -> Tuple[float, float]:
-    """
-    Calculate timing for stroke execution based on curvature and length
-
-    Args:
-        points: List of [x, y] coordinates in mm
-        is_closed_loop: Whether stroke forms a closed loop
-        base_speed_mm_s: Base drawing speed
-        min_speed_mm_s: Minimum drawing speed
-        max_speed_mm_s: Maximum drawing speed
-
-    Returns:
-        (duration_s, adjusted_speed_mm_s)
-    """
-    if len(points) < 2:
-        return 0.0, base_speed_mm_s
-
-    # Calculate total length
-    total_length = 0.0
-    for i in range(1, len(points)):
-        segment_length = np.linalg.norm(np.array(points[i]) - np.array(points[i-1]))
-        total_length += segment_length
-
-    # Calculate average curvature
-    avg_curvature = calculate_average_curvature(points)
-
-    # Adjust speed based on curvature (higher curvature = slower speed)
-    curvature_factor = 1.0 + (avg_curvature * 2.0)  # Scaling factor
-    adjusted_speed = base_speed_mm_s / curvature_factor
-    adjusted_speed = np.clip(adjusted_speed, min_speed_mm_s, max_speed_mm_s)
-
-    # Add extra time for closed loops (acceleration/deceleration)
-    duration = total_length / adjusted_speed
-    if is_closed_loop:
-        duration *= 1.1  # 10% overhead for smooth loop closure
-
-    return duration, adjusted_speed
-
-def calculate_average_curvature(points: List[List[float]]) -> float:
-    """
-    Calculate average curvature for a sequence of points
-
-    Args:
-        points: List of [x, y] coordinates
-
-    Returns:
-        Average curvature value (0 = straight line, higher = more curved)
-    """
-    if len(points) < 3:
-        return 0.0
-
-    curvatures = []
-    for i in range(1, len(points) - 1):
-        p1, p2, p3 = points[i-1], points[i], points[i+1]
-        curvature = calculate_curvature(p1, p2, p3)
-        curvatures.append(curvature)
-
-    return np.mean(curvatures) if curvatures else 0.0
-
-def calculate_curvature(p1: List[float], p2: List[float], p3: List[float]) -> float:
-    """
-    Calculate curvature at point p2 given three consecutive points
-
-    Args:
-        p1, p2, p3: Three consecutive points [x, y]
-
-    Returns:
-        Curvature value at p2
-    """
-    # Vectors from p1 to p2 and p2 to p3
-    v1 = np.array(p2) - np.array(p1)
-    v2 = np.array(p3) - np.array(p2)
-
-    # Cross product magnitude (proportional to curvature)
-    cross_product = abs(v1[0] * v2[1] - v1[1] * v2[0])
-
-    # Normalize by vector magnitudes
-    norm_v1 = np.linalg.norm(v1)
-    norm_v2 = np.linalg.norm(v2)
-
-    if norm_v1 == 0 or norm_v2 == 0:
-        return 0.0
-
-    return cross_product / (norm_v1 * norm_v2)
+# Timing and curvature calculation functions removed - handled by firmware engineer
 
 def optimize_by_semantic_order(stroke_data: StrokeData) -> StrokeData:
     """
@@ -604,13 +501,9 @@ def group_strokes_by_mask(stroke_data: StrokeData) -> List[Dict]:
         # Add statistics for the entire mask
         total_length = sum(s['length_mm'] for s in mask_group['strokes'])
         stroke_count = len(mask_group['strokes'])
-        
-        # Simple duration estimation based on stroke count
-        estimated_duration = stroke_count * STROKE_DURATION_ESTIMATE_S
 
         mask_group.update({
             'total_length_mm': total_length,
-            'total_duration_s': estimated_duration,
             'stroke_count': stroke_count
         })
 
@@ -618,28 +511,11 @@ def group_strokes_by_mask(stroke_data: StrokeData) -> List[Dict]:
 
     print(f"   📱 Grouped strokes into {len(mask_stroke_arrays)} mask arrays for narration")
     for i, mask_array in enumerate(mask_stroke_arrays):
-        print(f"     • Array[{i}] - Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']}, {mask_array['total_duration_s']:.1f}s)")
+        print(f"     • Array[{i}] - Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']})")
 
     return mask_stroke_arrays
 
-def scale_timing_for_demo(mask_stroke_arrays: List[Dict], speed_scale_factor: float) -> List[Dict]:
-    """
-    Scale all timing values to fit within demo duration
-    
-    Args:
-        mask_stroke_arrays: Array of mask stroke data
-        speed_scale_factor: Factor to scale speeds by (>1 = faster)
-    
-    Returns:
-        Updated mask stroke arrays with scaled timing
-    """
-    for mask_array in mask_stroke_arrays:
-        # Scale mask timing
-        mask_array['total_duration_s'] /= speed_scale_factor
-        
-        # Duration scaling removed - not using individual stroke timing
-    
-    return mask_stroke_arrays
+# Timing functions removed - handled by firmware engineer
 
 def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = 'hybrid') -> Dict:
     """
@@ -683,7 +559,6 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
         'total_masks': len(mask_stroke_arrays),
         'total_length_mm': optimized_data.meta['total_length_mm'],
         'total_pen_lifts': optimized_data.meta['total_pen_lifts'],
-        'estimated_duration_s': optimized_data.meta['estimated_duration_s'],
         'estimated_travel_distance_mm': optimized_data.meta['estimated_travel_distance_mm'],
         'optimization_method': strategy,
         'success': True,
@@ -692,29 +567,16 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
                 'mask_id': mask_array['mask_id'],
                 'stroke_count': len(mask_array['strokes']),
                 'warmth_name': mask_array['warmth_name'],
-                'total_length_mm': sum(s['length_mm'] for s in mask_array['strokes']),
-                'estimated_duration_s': sum(s['duration_s'] for s in mask_array['strokes'])
+                'total_length_mm': sum(s['length_mm'] for s in mask_array['strokes'])
             }
             for mask_array in mask_stroke_arrays
         ]
     }
 
-    # Scale timing to fit demo duration if needed
-    demo_duration_limit_s = DEMO_DURATION_LIMIT_S
-    if statistics['estimated_duration_s'] > demo_duration_limit_s:
-        speed_scale_factor = statistics['estimated_duration_s'] / demo_duration_limit_s
-        mask_stroke_arrays = scale_timing_for_demo(mask_stroke_arrays, speed_scale_factor)
-        statistics['estimated_duration_s'] = demo_duration_limit_s
-        statistics['speed_scale_factor'] = speed_scale_factor
-        print(f"   ⚡ Scaled timing by {speed_scale_factor:.2f}x to fit 2-minute demo")
-
     print(f"   ✅ Optimization complete!")
     print(f"   📊 {statistics['total_strokes']} strokes across {statistics['total_masks']} masks")
     print(f"   📏 Drawing: {statistics['total_length_mm']:.1f}mm, Travel: {statistics['estimated_travel_distance_mm']:.1f}mm")
-    print(f"   ⏱️  Estimated time: {statistics['estimated_duration_s']:.1f}s ({statistics['estimated_duration_s']/60:.1f} min)")
-    
-    if statistics['estimated_duration_s'] <= demo_duration_limit_s:
-        print(f"   🎯 Perfect for 2-minute demo! ({demo_duration_limit_s - statistics['estimated_duration_s']:.1f}s buffer)")
+    print(f"   🚀 Ready for firmware timing calculations")
 
     return {
         'mask_stroke_arrays': mask_stroke_arrays,
