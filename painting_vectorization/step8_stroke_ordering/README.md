@@ -8,94 +8,79 @@ Step 8 is the final stage of the painting vectorization pipeline that produces o
 
 ## Output Data Structure
 
-### 1. JSON Format (Primary)
+### JSON Format (Primary)
 
-The main output is a comprehensive JSON file with the following structure:
+The main output is a simplified JSON file optimized for narration timing:
 
 ```json
 {
-  "metadata": {
-    "canvas_mm": [160.0, 160.0],
-    "scale_mm_per_px": 0.156,
-    "total_strokes": 700,
-    "total_length_mm": 2687.3,
-    "total_pen_lifts": 245,
-    "estimated_duration_s": 156.2,
-    "estimated_travel_distance_mm": 1240.8,
-    "processing_timestamp": "2025-09-13T19:15:30.123456",
-    "optimization_method": "hybrid",
-    "speed_profile": {
-      "default_speed_mm_s": 20.0,
-      "min_speed_mm_s": 10.0,
-      "max_speed_mm_s": 30.0
-    }
-  },
-  "strokes": [
+  "mask_stroke_arrays": [
     {
-      "stroke_id": 0,
-      "element_id": 2,
-      "warmth": 0,
+      "mask_id": 0,
+      "warmth_class": 0,
       "warmth_name": "warm",
-      "phase": "boundary",
-      "points": [[45.2, 78.9], [46.1, 79.2], [47.0, 79.8]],
-      "length_mm": 12.7,
-      "duration_s": 0.85,
-      "start_pos": [45.2, 78.9],
-      "end_pos": [47.0, 79.8],
-      "pen_lifts": 0,
-      "curvature_avg": 0.124,
-      "speed_mm_s": 15.2,
-      "is_closed_loop": false,
-      "order_index": 45
+      "total_length_mm": 45.2,
+      "total_duration_s": 2.1,
+      "stroke_count": 3,
+      "strokes": [
+        {
+          "stroke_id": 0,
+          "element_id": 0,
+          "warmth": 0,
+          "warmth_name": "warm",
+          "phase": "boundary",
+          "points": [[45.2, 78.9], [46.1, 79.2], [47.0, 79.8]],
+          "length_mm": 12.7,
+          "duration_s": 0.85,
+          "start_pos": [45.2, 78.9],
+          "end_pos": [47.0, 79.8],
+          "speed_mm_s": 15.2
+        }
+      ]
     }
   ],
-  "pen_lifts": [
-    {
-      "type": "pen_lift",
-      "from_stroke_id": 0,
-      "to_stroke_id": 1,
-      "travel_distance_mm": 8.5,
-      "height_mm": 15.0,
-      "duration_s": 0.17
-    }
-  ],
-  "format_version": "1.0",
-  "description": "Robotic painting stroke data - optimized for execution"
+  "statistics": {
+    "total_strokes": 700,
+    "total_masks": 12,
+    "total_length_mm": 2687.3,
+    "estimated_duration_s": 156.2,
+    "optimization_method": "hybrid"
+  },
+  "format_version": "2.0",
+  "description": "Robotic painting stroke data grouped by mask for narration timing"
 }
 ```
 
-### 2. G-code Format (CNC/Robot Compatible)
-
-```gcode
-; Robotic Painting G-code
-; Generated: 2025-09-13T19:15:30.123456
-; Total strokes: 700
-; Estimated time: 156.2s
-
-G21 ; Set units to millimeters
-G90 ; Absolute positioning
-M3 ; Prepare pen/brush system
-G0 Z15 ; Lift pen to safe height
-G0 X80 Y80 ; Move to canvas center
-
-; Stroke 0: boundary (warm)
-; Length: 12.7mm, Speed: 15.2mm/s
-G0 X45.20 Y78.90 ; Move to start
-G0 Z0 ; Lower pen
-G1 X46.10 Y79.20 F912
-G1 X47.00 Y79.80 F912
-G0 Z15 ; Lift pen
-```
-
-### 3. CSV Format (Analysis & Debugging)
-
-```csv
-stroke_id,element_id,phase,warmth,warmth_name,length_mm,duration_s,speed_mm_s,curvature_avg,start_x,start_y,end_x,end_y,is_closed_loop,point_count,order_index
-0,2,boundary,0,warm,12.7,0.85,15.2,0.124,45.2,78.9,47.0,79.8,false,3,45
-1,2,internal,0,warm,8.3,0.42,19.8,0.089,47.0,79.8,50.1,82.4,false,2,46
-```
-
 ## Key Data Fields for Hardware Integration
+
+### Primary Output: Mask-Grouped Stroke Arrays
+Step 8 now returns strokes grouped by mask for narration timing:
+
+```python
+{
+    'mask_stroke_arrays': [
+        {
+            'mask_id': 0,
+            'warmth_class': 0,
+            'warmth_name': 'warm',
+            'strokes': [stroke1, stroke2, stroke3],  # Array of strokes for mask 0
+            'total_length_mm': 45.2,
+            'total_duration_s': 2.1,
+            'stroke_count': 3
+        },
+        {
+            'mask_id': 1,
+            'warmth_class': 1,
+            'warmth_name': 'cool',
+            'strokes': [stroke4, stroke5],  # Array of strokes for mask 1
+            'total_length_mm': 32.8,
+            'total_duration_s': 1.6,
+            'stroke_count': 2
+        }
+    ],
+    'statistics': {...}
+}
+```
 
 ### Stroke Data
 - **`stroke_id`**: Unique identifier for execution order tracking
@@ -227,25 +212,46 @@ The system provides comprehensive timing estimates:
 
 ## Integration Examples
 
-### Python Integration
+### Python Integration with Narration Timing
 ```python
 from step8_stroke_ordering.stroke_ordering import process_all_stroke_ordering
 
-# Process stroke ordering
+# Process stroke ordering (returns mask-grouped arrays)
 results = process_all_stroke_ordering(color_detection_results, strategy='hybrid')
-stroke_data = results['stroke_data']
+mask_stroke_arrays = results['mask_stroke_arrays']
 
-# Access robot instructions
-for stroke in stroke_data.strokes:
-    print(f"Draw stroke {stroke['stroke_id']} at speed {stroke['speed_mm_s']}mm/s")
-    for point in stroke['points']:
-        x, y = point
-        robot.move_to(x, y)
+# Execute drawing with narration timing
+for i, mask_array in enumerate(mask_stroke_arrays):
+    print(f"Drawing mask {mask_array['mask_id']} ({mask_array['warmth_name']})")
+    
+    # Start narration for this mask
+    narration.start_mask_narration(
+        mask_id=mask_array['mask_id'],
+        duration_s=mask_array['total_duration_s'],
+        warmth=mask_array['warmth_name']
+    )
+    
+    # Draw all strokes for this mask
+    for stroke in mask_array['strokes']:
+        print(f"  Drawing stroke {stroke['stroke_id']} at {stroke['speed_mm_s']}mm/s")
+        robot.draw_stroke(stroke['points'], stroke['speed_mm_s'])
+    
+    # Finish narration for this mask
+    narration.finish_mask_narration(mask_array['mask_id'])
 
-# Handle pen lifts
-for lift in stroke_data.pen_lifts:
-    robot.lift_pen(lift['height_mm'])
-    robot.travel_to_next_stroke()
+print(f"Completed drawing {len(mask_stroke_arrays)} masks")
+```
+
+### Direct Stroke Access
+```python
+# Access individual strokes across all masks
+all_strokes = []
+for mask_array in mask_stroke_arrays:
+    all_strokes.extend(mask_array['strokes'])
+
+# Process strokes sequentially if needed
+for stroke in all_strokes:
+    robot.draw_stroke(stroke['points'], stroke['speed_mm_s'])
 ```
 
 ### Robot Control Workflow

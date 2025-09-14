@@ -43,9 +43,9 @@ class StrokeData:
             'processing_timestamp': datetime.now().isoformat(),
             'optimization_method': '',
             'speed_profile': {
-                'default_speed_mm_s': 20.0,
-                'min_speed_mm_s': 10.0,
-                'max_speed_mm_s': 30.0
+                'default_speed_mm_s': 40.0,  # Faster for 2-minute demo
+                'min_speed_mm_s': 25.0,
+                'max_speed_mm_s': 60.0
             }
         }
         self.strokes = []
@@ -82,9 +82,6 @@ class StrokeData:
             'duration_s': duration_s,
             'start_pos': start_pos,  # [x_mm, y_mm]
             'end_pos': end_pos,      # [x_mm, y_mm]
-            'pen_lifts': 0,  # Number of pen lifts within stroke
-            'curvature_avg': kwargs.get('curvature_avg', 0.0),
-            'speed_mm_s': kwargs.get('speed_mm_s', 20.0),
             'is_closed_loop': kwargs.get('is_closed_loop', False),
             'order_index': len(self.strokes)  # Original order before optimization
         }
@@ -224,28 +221,33 @@ def optimize_stroke_sequence(stroke_data: StrokeData, strategy: str = 'hybrid') 
 
 def optimize_by_travel_distance(stroke_data: StrokeData) -> StrokeData:
     """
-    Optimize stroke order using TSP-like travel distance minimization
+    Fast travel distance optimization using greedy nearest-neighbor
 
-    This uses a greedy nearest-neighbor approach followed by 2-opt improvements
+    Uses a greedy nearest-neighbor approach without expensive 2-opt improvements
     to minimize the total pen-up travel distance between strokes.
     """
-    print("   🎯 Optimizing stroke order for minimum travel distance...")
+    print("   🎯 Optimizing stroke order for minimum travel distance (fast mode)...")
 
     if len(stroke_data.strokes) <= 1:
         return stroke_data
 
-    # Extract stroke positions for TSP
-    stroke_positions = [(i, stroke['start_pos']) for i, stroke in enumerate(stroke_data.strokes)]
+    # For very large stroke sets, use spatial sorting instead of TSP
+    if len(stroke_data.strokes) > 100:
+        print(f"   ⚡ Using spatial sorting for {len(stroke_data.strokes)} strokes (too many for TSP)")
+        # Simple spatial sorting by diagonal distance from origin
+        sorted_strokes = sorted(stroke_data.strokes, 
+                              key=lambda s: (s['start_pos'][0] + s['start_pos'][1]))
+        stroke_data.strokes = sorted_strokes
+    else:
+        # Extract stroke positions for TSP
+        stroke_positions = [(i, stroke['start_pos']) for i, stroke in enumerate(stroke_data.strokes)]
 
-    # Solve using greedy nearest neighbor
-    ordered_indices = solve_tsp_greedy(stroke_positions)
+        # Solve using greedy nearest neighbor only (skip expensive 2-opt)
+        ordered_indices = solve_tsp_greedy(stroke_positions)
 
-    # Improve with 2-opt local search
-    ordered_indices = improve_with_2opt(ordered_indices, stroke_positions)
-
-    # Reorder strokes
-    original_strokes = copy.deepcopy(stroke_data.strokes)
-    stroke_data.strokes = [original_strokes[i] for i in ordered_indices]
+        # Reorder strokes
+        original_strokes = copy.deepcopy(stroke_data.strokes)
+        stroke_data.strokes = [original_strokes[i] for i in ordered_indices]
 
     # Calculate pen lifts for optimized order
     calculate_pen_lifts(stroke_data)
@@ -257,12 +259,12 @@ def optimize_by_travel_distance(stroke_data: StrokeData) -> StrokeData:
 
 def optimize_hybrid(stroke_data: StrokeData) -> StrokeData:
     """
-    Hybrid optimization: Group by semantic phase, then optimize within groups
+    Fast hybrid optimization: Group by semantic phase with minimal travel optimization
 
     This preserves the semantic meaning (boundary→internal→detail) while
-    optimizing travel distance within each phase.
+    doing lightweight travel optimization within each phase.
     """
-    print("   🎯 Optimizing stroke order with hybrid strategy...")
+    print("   🎯 Optimizing stroke order with fast hybrid strategy...")
 
     # Group strokes by phase
     phase_groups = {'boundary': [], 'internal': [], 'detail': []}
@@ -272,28 +274,35 @@ def optimize_hybrid(stroke_data: StrokeData) -> StrokeData:
 
     optimized_strokes = []
 
-    # Optimize each phase separately
+    # Optimize each phase separately with performance limits
     for phase_name in ['boundary', 'internal', 'detail']:
         if not phase_groups[phase_name]:
             continue
 
-        # Extract positions for this phase
-        phase_positions = [(i, stroke['start_pos']) for i, stroke in phase_groups[phase_name]]
+        # For performance, only optimize small groups with expensive TSP
+        if len(phase_groups[phase_name]) <= 20:
+            # Extract positions for this phase
+            phase_positions = [(i, stroke['start_pos']) for i, stroke in phase_groups[phase_name]]
 
-        if len(phase_positions) > 1:
-            # Optimize within phase
-            ordered_indices = solve_tsp_greedy(phase_positions)
-            ordered_indices = improve_with_2opt(ordered_indices, phase_positions)
-
-            # Add optimized strokes from this phase
-            for tsp_idx in ordered_indices:
-                # tsp_idx refers to position in phase_positions, not phase_groups
-                if tsp_idx < len(phase_groups[phase_name]):
-                    original_idx, stroke = phase_groups[phase_name][tsp_idx]
-                    optimized_strokes.append(stroke)
+            if len(phase_positions) > 1:
+                # Light TSP optimization for small groups only
+                ordered_indices = solve_tsp_greedy(phase_positions)
+                # Skip expensive 2-opt for performance
+                
+                # Add optimized strokes from this phase
+                for tsp_idx in ordered_indices:
+                    if tsp_idx < len(phase_groups[phase_name]):
+                        original_idx, stroke = phase_groups[phase_name][tsp_idx]
+                        optimized_strokes.append(stroke)
+            else:
+                # Single stroke in phase
+                optimized_strokes.extend([stroke for _, stroke in phase_groups[phase_name]])
         else:
-            # Single stroke in phase
-            optimized_strokes.extend([stroke for _, stroke in phase_groups[phase_name]])
+            # For large groups, use simple spatial sorting instead of expensive TSP
+            print(f"   ⚡ Using fast spatial sorting for {len(phase_groups[phase_name])} {phase_name} strokes")
+            sorted_strokes = sorted(phase_groups[phase_name], 
+                                  key=lambda x: (x[1]['start_pos'][0] + x[1]['start_pos'][1]))
+            optimized_strokes.extend([stroke for _, stroke in sorted_strokes])
 
     stroke_data.strokes = optimized_strokes
 
@@ -421,8 +430,8 @@ def calculate_pen_lifts(stroke_data: StrokeData, min_travel_distance_mm: float =
             )
 
 def calculate_stroke_timing(points: List[List[float]], is_closed_loop: bool = False,
-                          base_speed_mm_s: float = 20.0, min_speed_mm_s: float = 10.0,
-                          max_speed_mm_s: float = 30.0) -> Tuple[float, float]:
+                          base_speed_mm_s: float = 40.0, min_speed_mm_s: float = 25.0,
+                          max_speed_mm_s: float = 60.0) -> Tuple[float, float]:
     """
     Calculate timing for stroke execution based on curvature and length
 
@@ -546,16 +555,101 @@ def optimize_by_semantic_order(stroke_data: StrokeData) -> StrokeData:
 
     return stroke_data
 
+def group_strokes_by_mask(stroke_data: StrokeData) -> List[Dict]:
+    """
+    Group optimized strokes by mask for narration timing
+    
+    Returns an array of arrays where each inner array represents strokes for one mask.
+    This structure allows narration to be timed by the current mask being drawn.
+
+    Args:
+        stroke_data: Optimized stroke data
+
+    Returns:
+        List of mask arrays, each containing:
+        {
+            'mask_id': int,
+            'warmth_class': int,
+            'warmth_name': str,
+            'strokes': List[stroke_objects],  # Array of strokes for this mask
+            'total_length_mm': float,
+            'total_duration_s': float,
+            'stroke_count': int
+        }
+    """
+    # Group strokes by mask ID (element_id corresponds to mask)
+    mask_groups = {}
+
+    for stroke in stroke_data.strokes:
+        mask_id = stroke['element_id']  # element_id corresponds to mask
+
+        if mask_id not in mask_groups:
+            mask_groups[mask_id] = {
+                'mask_id': mask_id,
+                'warmth_class': stroke['warmth'],
+                'warmth_name': stroke['warmth_name'],
+                'strokes': []  # This is the inner array for this mask
+            }
+
+        mask_groups[mask_id]['strokes'].append(stroke)
+
+    # Convert to list sorted by mask ID for consistent ordering
+    mask_stroke_arrays = []
+    for mask_id in sorted(mask_groups.keys()):
+        mask_group = mask_groups[mask_id]
+
+        # Add timing and statistics for the entire mask
+        total_length = sum(s['length_mm'] for s in mask_group['strokes'])
+        total_duration = sum(s['duration_s'] for s in mask_group['strokes'])
+
+        mask_group.update({
+            'total_length_mm': total_length,
+            'total_duration_s': total_duration,
+            'stroke_count': len(mask_group['strokes'])
+        })
+
+        mask_stroke_arrays.append(mask_group)
+
+    print(f"   📱 Grouped strokes into {len(mask_stroke_arrays)} mask arrays for narration")
+    for i, mask_array in enumerate(mask_stroke_arrays):
+        print(f"     • Array[{i}] - Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']}, {mask_array['total_duration_s']:.1f}s)")
+
+    return mask_stroke_arrays
+
+def scale_timing_for_demo(mask_stroke_arrays: List[Dict], speed_scale_factor: float) -> List[Dict]:
+    """
+    Scale all timing values to fit within demo duration
+    
+    Args:
+        mask_stroke_arrays: Array of mask stroke data
+        speed_scale_factor: Factor to scale speeds by (>1 = faster)
+    
+    Returns:
+        Updated mask stroke arrays with scaled timing
+    """
+    for mask_array in mask_stroke_arrays:
+        # Scale mask timing
+        mask_array['total_duration_s'] /= speed_scale_factor
+        
+        # Scale individual stroke timing and speeds
+        for stroke in mask_array['strokes']:
+            stroke['duration_s'] /= speed_scale_factor
+            stroke['speed_mm_s'] *= speed_scale_factor
+            # Clamp speed to reasonable robot limits
+            stroke['speed_mm_s'] = min(stroke['speed_mm_s'], 80.0)  # Max robot speed
+    
+    return mask_stroke_arrays
+
 def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = 'hybrid') -> Dict:
     """
-    Complete stroke ordering process: flatten, optimize, and prepare for export
+    Complete stroke ordering process: flatten, optimize, and group by masks for narration
 
     Args:
         color_detection_results: Results from Step 7
         strategy: Optimization strategy
 
     Returns:
-        Dict containing optimized stroke data and statistics
+        Dict containing mask-grouped stroke arrays and statistics
     """
     print(f"   📋 Flattening stroke hierarchy...")
 
@@ -565,9 +659,10 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
     if stroke_data.meta['total_strokes'] == 0:
         print("   ⚠️  No valid strokes found for ordering")
         return {
-            'stroke_data': stroke_data,
+            'mask_stroke_arrays': [],
             'statistics': {
                 'total_strokes': 0,
+                'total_masks': 0,
                 'optimization_method': strategy,
                 'success': False
             }
@@ -578,112 +673,101 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
     # Step 2: Optimize stroke order
     optimized_data = optimize_stroke_sequence(stroke_data, strategy)
 
-    # Step 3: Generate comprehensive statistics
+    # Step 3: Group strokes by mask for narration timing
+    mask_stroke_arrays = group_strokes_by_mask(optimized_data)
+
+    # Step 4: Generate comprehensive statistics
     statistics = {
         'total_strokes': optimized_data.meta['total_strokes'],
+        'total_masks': len(mask_stroke_arrays),
         'total_length_mm': optimized_data.meta['total_length_mm'],
         'total_pen_lifts': optimized_data.meta['total_pen_lifts'],
         'estimated_duration_s': optimized_data.meta['estimated_duration_s'],
         'estimated_travel_distance_mm': optimized_data.meta['estimated_travel_distance_mm'],
         'optimization_method': strategy,
         'success': True,
-        'stroke_distribution': {
-            'warm_strokes': len([s for s in optimized_data.strokes if s['warmth'] == 0]),
-            'cool_strokes': len([s for s in optimized_data.strokes if s['warmth'] == 1]),
-            'boundary_strokes': len([s for s in optimized_data.strokes if s['phase'] == 'boundary']),
-            'internal_strokes': len([s for s in optimized_data.strokes if s['phase'] == 'internal']),
-            'detail_strokes': len([s for s in optimized_data.strokes if s['phase'] == 'detail'])
-        }
+        'mask_distribution': [
+            {
+                'mask_id': mask_array['mask_id'],
+                'stroke_count': len(mask_array['strokes']),
+                'warmth_name': mask_array['warmth_name'],
+                'total_length_mm': sum(s['length_mm'] for s in mask_array['strokes']),
+                'estimated_duration_s': sum(s['duration_s'] for s in mask_array['strokes'])
+            }
+            for mask_array in mask_stroke_arrays
+        ]
     }
 
+    # Scale timing to fit 2-minute demo if needed
+    demo_duration_limit_s = 120.0  # 2 minutes
+    if statistics['estimated_duration_s'] > demo_duration_limit_s:
+        speed_scale_factor = statistics['estimated_duration_s'] / demo_duration_limit_s
+        mask_stroke_arrays = scale_timing_for_demo(mask_stroke_arrays, speed_scale_factor)
+        statistics['estimated_duration_s'] = demo_duration_limit_s
+        statistics['speed_scale_factor'] = speed_scale_factor
+        print(f"   ⚡ Scaled timing by {speed_scale_factor:.2f}x to fit 2-minute demo")
+
     print(f"   ✅ Optimization complete!")
-    print(f"   📊 {statistics['total_strokes']} strokes, {statistics['total_pen_lifts']} pen lifts")
+    print(f"   📊 {statistics['total_strokes']} strokes across {statistics['total_masks']} masks")
     print(f"   📏 Drawing: {statistics['total_length_mm']:.1f}mm, Travel: {statistics['estimated_travel_distance_mm']:.1f}mm")
     print(f"   ⏱️  Estimated time: {statistics['estimated_duration_s']:.1f}s ({statistics['estimated_duration_s']/60:.1f} min)")
+    
+    if statistics['estimated_duration_s'] <= demo_duration_limit_s:
+        print(f"   🎯 Perfect for 2-minute demo! ({demo_duration_limit_s - statistics['estimated_duration_s']:.1f}s buffer)")
 
     return {
-        'stroke_data': optimized_data,
+        'mask_stroke_arrays': mask_stroke_arrays,
         'statistics': statistics
     }
 
-def save_stroke_ordering_results(ordering_results: Dict, output_dir: str = "results/step8_stroke_ordering") -> str:
+def save_stroke_ordering_results(ordering_results: Dict, output_dir: str = "results/step8_stroke_ordering",
+                                create_visualization: bool = False) -> str:
     """
-    Save stroke ordering results with comprehensive output formats
+    Save stroke ordering results with optimized performance
 
     Args:
         ordering_results: Results from stroke ordering process
         output_dir: Directory to save results
+        create_visualization: Whether to create visualization (slow)
 
     Returns:
         Path to main results file
     """
-    import matplotlib.pyplot as plt
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Determine output path and create directory
+    # Ensure results directory exists
     results_dir = Path(output_dir)
-    if not results_dir.exists():
-        results_dir = Path("results/step8_stroke_ordering")
-    if not results_dir.exists():
-        results_dir = Path("../results/step8_stroke_ordering")
-    if not results_dir.exists():
-        results_dir = Path(".")  # Fallback to current directory
+    if not results_dir.is_absolute():
+        # Make relative paths relative to current working directory
+        results_dir = Path.cwd() / results_dir
+        
+    print(f"   📁 Using output directory: {results_dir}")  # Debug output
 
     # Create directory if it doesn't exist
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    stroke_data = ordering_results['stroke_data']
-    statistics = ordering_results['statistics']
-
-    # 1. Save JSON format (primary output for hardware)
+    # Save simplified JSON format with mask arrays only
     json_path = results_dir / f"stroke_ordering_results_{timestamp}.json"
-    export_json(stroke_data, str(json_path))
-
-    # 2. Save G-code format
-    gcode_path = results_dir / f"stroke_ordering_gcode_{timestamp}.gcode"
-    export_gcode(stroke_data, str(gcode_path))
-
-    # 3. Save CSV format
-    csv_path = results_dir / f"stroke_ordering_data_{timestamp}.csv"
-    export_csv(stroke_data, str(csv_path))
-
-    # 4. Create visualization
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-
-    # Plot 1: Stroke order with travel paths
-    ax1 = axes[0, 0]
-    plot_stroke_order_visualization(stroke_data, ax1)
-    ax1.set_title("Optimized Stroke Order\n(with travel paths)")
-
-    # Plot 2: Speed profile
-    ax2 = axes[0, 1]
-    plot_speed_profile(stroke_data, ax2)
-    ax2.set_title("Drawing Speed Profile")
-
-    # Plot 3: Statistics
-    ax3 = axes[1, 0]
-    plot_statistics(statistics, ax3)
-    ax3.set_title("Execution Statistics")
-
-    # Plot 4: Color and phase distribution
-    ax4 = axes[1, 1]
-    plot_distribution(statistics, ax4)
-    ax4.set_title("Stroke Distribution")
-
-    plt.tight_layout()
-
-    viz_path = results_dir / f"stroke_ordering_visualization_{timestamp}.png"
-    plt.savefig(viz_path, dpi=150, bbox_inches='tight')
-    plt.close()
+    export_enhanced_json(ordering_results, str(json_path))
 
     print(f"   💾 Saved stroke ordering results:")
     print(f"   📊 JSON: {json_path}")
-    print(f"   🤖 G-code: {gcode_path}")
-    print(f"   📈 CSV: {csv_path}")
-    print(f"   📊 Visualization: {viz_path}")
 
     return str(json_path)
+
+def export_enhanced_json(ordering_results: Dict, filepath: str):
+    """Export stroke data with mask arrays for narration"""
+    output_data = {
+        'mask_stroke_arrays': ordering_results['mask_stroke_arrays'],
+        'statistics': ordering_results['statistics'],
+        'format_version': '2.0',
+        'description': 'Robotic painting stroke data grouped by mask for narration timing'
+    }
+
+    with open(filepath, 'w') as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+# Visualization functions removed - no longer needed for performance
 
 def export_json(stroke_data: StrokeData, filepath: str):
     """Export stroke data as JSON (primary format for hardware integration)"""

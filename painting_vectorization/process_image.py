@@ -256,10 +256,15 @@ def process_painting_pipeline(image_path):
         print("-" * 30)
         step5_start = datetime.now()
 
-        vectorized_results = process_all_vectorizations(stroke_graph_results, method='adaptive', max_error=1.0)
-
-        step5_time = (datetime.now() - step5_start).total_seconds()
-        successful_vectorizations = len([r for r in vectorized_results if r is not None])
+        try:
+            vectorized_results = process_all_vectorizations(stroke_graph_results, method='adaptive', max_error=1.0)
+            step5_time = (datetime.now() - step5_start).total_seconds()
+            successful_vectorizations = len([r for r in vectorized_results if r is not None])
+        except Exception as step5_error:
+            print(f"   ❌ Vectorization failed: {str(step5_error)}")
+            step5_time = (datetime.now() - step5_start).total_seconds()
+            successful_vectorizations = 0
+            vectorized_results = []
 
         if successful_vectorizations > 0:
             valid_vectorized_results = [r for r in vectorized_results if r is not None]
@@ -277,7 +282,11 @@ def process_painting_pipeline(image_path):
             print("   ⚠️  No successful vectorizations")
 
         # Save vectorization results
-        vectorization_output_path = save_vectorization_results(vectorized_results)
+        try:
+            vectorization_output_path = save_vectorization_results(vectorized_results)
+        except Exception as save_error:
+            print(f"   ⚠️  Could not save vectorization results: {str(save_error)}")
+            vectorization_output_path = "unavailable"
 
         print(f"   ⏱️  Time: {step5_time:.3f}s")
         print("   ✅ Complete!")
@@ -340,22 +349,44 @@ def process_painting_pipeline(image_path):
         print("-" * 30)
         step8_start = datetime.now()
 
-        ordering_results = process_all_stroke_ordering(color_detection_results, strategy='hybrid')
+        try:
+            ordering_results = process_all_stroke_ordering(color_detection_results, strategy='hybrid')
+            step8_time = (datetime.now() - step8_start).total_seconds()
 
-        step8_time = (datetime.now() - step8_start).total_seconds()
+            # Extract ordering statistics
+            ordering_stats = ordering_results['statistics']
 
-        # Extract ordering statistics
-        ordering_stats = ordering_results['statistics']
+            if ordering_stats.get('success', False):
+                print(f"   ✅ Success: {ordering_stats['total_strokes']} strokes flattened and optimized")
+                print(f"   🎯 Strategy: {ordering_stats['optimization_method']}")
+                print(f"   📏 Drawing length: {ordering_stats['total_length_mm']:.1f}mm")
+                print(f"   ✈️  Travel distance: {ordering_stats['estimated_travel_distance_mm']:.1f}mm")
+                print(f"   🔄 Pen lifts: {ordering_stats['total_pen_lifts']}")
+                print(f"   ⏱️  Estimated execution: {ordering_stats['estimated_duration_s']:.1f}s ({ordering_stats['estimated_duration_s']/60:.1f} min)")
 
-        print(f"   ✅ Success: {ordering_stats['total_strokes']} strokes flattened and optimized")
-        print(f"   🎯 Strategy: {ordering_stats['optimization_method']}")
-        print(f"   📏 Drawing length: {ordering_stats['total_length_mm']:.1f}mm")
-        print(f"   ✈️  Travel distance: {ordering_stats['estimated_travel_distance_mm']:.1f}mm")
-        print(f"   🔄 Pen lifts: {ordering_stats['total_pen_lifts']}")
-        print(f"   ⏱️  Estimated execution: {ordering_stats['estimated_duration_s']:.1f}s ({ordering_stats['estimated_duration_s']/60:.1f} min)")
+                # Save stroke ordering results (optimized, no visualization for speed)
+                stroke_ordering_output_path = save_stroke_ordering_results(
+                    ordering_results, 
+                    output_dir="results/step8_stroke_ordering",
+                    create_visualization=False
+                )
 
-        # Save stroke ordering results
-        stroke_ordering_output_path = save_stroke_ordering_results(ordering_results)
+                # Show mask breakdown for narration
+                mask_arrays = ordering_results.get('mask_stroke_arrays', [])
+                if mask_arrays:
+                    print(f"   📱 Mask breakdown for narration:")
+                    for mask_array in mask_arrays:
+                        print(f"     • Mask {mask_array['mask_id']}: {mask_array['stroke_count']} strokes ({mask_array['warmth_name']}, {mask_array['total_duration_s']:.1f}s)")
+            else:
+                print(f"   ⚠️  No valid strokes available for ordering")
+                print(f"   📊 Total strokes found: {ordering_stats.get('total_strokes', 0)}")
+                stroke_ordering_output_path = "unavailable"
+
+        except Exception as step8_error:
+            print(f"   ❌ Stroke ordering failed: {str(step8_error)}")
+            step8_time = (datetime.now() - step8_start).total_seconds()
+            ordering_stats = {'total_strokes': 0, 'total_pen_lifts': 0, 'success': False, 'optimization_method': 'failed'}
+            stroke_ordering_output_path = "unavailable"
 
         print(f"   ⏱️  Time: {step8_time:.3f}s")
         print("   ✅ Complete!")
@@ -373,7 +404,7 @@ def process_painting_pipeline(image_path):
         print(f"   🔧 Vectorizations: {successful_vectorizations if 'successful_vectorizations' in locals() else 0}")
         print(f"   📐 Samplings: {stats['successful_samplings'] if 'stats' in locals() else 0} ({stats['total_length_mm']:.1f}mm)" if 'stats' in locals() else "   📐 Samplings: 0")
         print(f"   🎨 Color classifications: {color_stats['successful_classifications'] if 'color_stats' in locals() else 0} ({color_stats['warm_percentage'] if 'color_stats' in locals() else 0:.1f}% warm)" if 'color_stats' in locals() else "   🎨 Color classifications: 0")
-        print(f"   🚀 Stroke ordering: {ordering_stats['total_strokes'] if 'ordering_stats' in locals() else 0} strokes, {ordering_stats['total_pen_lifts'] if 'ordering_stats' in locals() else 0} pen lifts" if 'ordering_stats' in locals() else "   🚀 Stroke ordering: 0")
+        print(f"   🚀 Stroke ordering: {ordering_stats.get('total_strokes', 0) if 'ordering_stats' in locals() else 0} strokes, {ordering_stats.get('total_pen_lifts', 0) if 'ordering_stats' in locals() else 0} pen lifts" if 'ordering_stats' in locals() else "   🚀 Stroke ordering: 0")
         print(f"   ⏱️  Total time: {total_time:.1f}s")
         print()
         print("📁 Output Files:")
@@ -403,8 +434,8 @@ def process_painting_pipeline(image_path):
             'total_length_mm': stats['total_length_mm'] if 'stats' in locals() else 0.0,
             'color_classifications': color_stats['successful_classifications'] if 'color_stats' in locals() else 0,
             'warm_percentage': color_stats['warm_percentage'] if 'color_stats' in locals() else 0.0,
-            'stroke_ordering': ordering_stats['total_strokes'] if 'ordering_stats' in locals() else 0,
-            'pen_lifts': ordering_stats['total_pen_lifts'] if 'ordering_stats' in locals() else 0,
+            'stroke_ordering': ordering_stats.get('total_strokes', 0) if 'ordering_stats' in locals() else 0,
+            'pen_lifts': ordering_stats.get('total_pen_lifts', 0) if 'ordering_stats' in locals() else 0,
             'coverage': total_coverage,
             'edge_output_path': edge_output_path,
             'segmentation_output_path': segmentation_output_path,
