@@ -39,7 +39,7 @@ try:
                 # Use afplay with volume control (macOS) - volume range is 0.0 to 1.0
                 # We'll use a lower volume (0.3) for background music
                 process = subprocess.Popen([
-                    'afplay', music_file_path, '-v', '0.3'
+                    'afplay', music_file_path, '-v', '0.07'
                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
                 # Wait for the music to finish or stop event
