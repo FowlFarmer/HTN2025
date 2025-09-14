@@ -52,8 +52,8 @@ class DeltaActuator:
 
     def upCold(self): self.controller.upCold()
     def downCold(self): self.controller.downCold()
-    # def upHot(self): self.controller.upHot()
-    # def downHot(self): self.controller.downHot()
+    def upHot(self): self.controller.upHot()
+    def downHot(self): self.controller.downHot()
 
     def return_home(self):
         self.command(0, 0)

@@ -100,11 +100,11 @@ class GRBLController:
     def downCold(self):
         self._send_and_wait("M3 S180")
 
-    # def upHot(self):
-    #     self._send_and_wait("2 0")
+    def upHot(self):
+        self._send_and_wait("M4 S0")
 
-    # def downHot(self):
-    #     self._send_and_wait("2 180")
+    def downHot(self):
+        self._send_and_wait("M4 S180")
 
     def set_position(self, x_mm: float, y_mm: float, feed: int = 20000):
         """Blocking move: returns after GRBL acknowledges the command line (not after motion completes)."""

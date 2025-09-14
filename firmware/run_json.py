@@ -89,25 +89,30 @@ for mask_index, mask in enumerate(data.get("mask_stroke_arrays", [])):
         )
         narration_thread.daemon = True  # Thread will close when main program exits
         narration_thread.start()
-    
     for stroke in mask.get("strokes", []):
+        down = 0  
         points = stroke.get("points", [])
-        # act.downCold()
-        # if(stroke.get("warmth_class", int) == 1):
-        #     act.downWarm()
-        # elif(stroke.get("warmth_class", int) == 0):
-        act.upCold()
         for p in points:
+            if(down == 1):
+                if(stroke.get("warmth", 0) == 1):
+                    print(f"🔥 Painting warm stroke with {len(points)} points...")
+                    act.downCold()
+                    # act.upCold()
+                elif(stroke.get("warmth", 0) == 0):
+                    print(f"❄️ Painting cold stroke with {len(points)} points...")
+                    act.downCold()
+                    # act.upHot()
+                down += 1
+            else:
+                down += 1
             if not (isinstance(p, (list, tuple)) and len(p) == 2):
                 continue
             total_points += 1
             x, y = float(p[0]), float(p[1])
             act.command(x, y)
             # time.sleep(0.05)  # small delay to visualize movement
-        # if(stroke.get("warmth_class", int) == 1):
-        #     act.upWarm()
-        # elif(stroke.get("warmth_class", int) == 0):
-            act.downCold()
+        act.upHot()
+        act.upCold()
     
     # Wait for narration to finish before moving to next mask
     if narration_thread and narration_thread.is_alive():

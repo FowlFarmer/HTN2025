@@ -23,7 +23,8 @@ genai
 python-dotenv==1.0.0
 transformers>=4.30.0
 soundfile>=0.12.1
-# TTS>=0.22.0 
+TTS>=0.22.0
+huggingface_hub>=0.16.0
 gtts==2.3.2
 
 annotated-types==0.7.0
