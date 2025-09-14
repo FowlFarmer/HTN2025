@@ -79,10 +79,8 @@ class StrokeData:
             'phase': phase,
             'points': points,  # List of [x_mm, y_mm] coordinates
             'length_mm': length_mm,
-            'duration_s': duration_s,
             'start_pos': start_pos,  # [x_mm, y_mm]
             'end_pos': end_pos,      # [x_mm, y_mm]
-            'is_closed_loop': kwargs.get('is_closed_loop', False),
             'order_index': len(self.strokes)  # Original order before optimization
         }
 
@@ -167,21 +165,16 @@ def flatten_strokes_from_results(color_detection_results: Dict) -> StrokeData:
                 )
 
                 # Calculate average curvature
-                curvature_avg = calculate_average_curvature(points)
-
                 stroke_data.add_stroke(
                     stroke_id=stroke_id,
                     element_id=element_id,
                     warmth=warmth,
                     points=points,
                     length_mm=length_mm,
-                    duration_s=duration_s,
+                    duration_s=0.0,  # Placeholder, not used in output
                     start_pos=start_pos,
                     end_pos=end_pos,
-                    phase=phase_name,
-                    curvature_avg=curvature_avg,
-                    speed_mm_s=speed_mm_s,
-                    is_closed_loop=stroke.get('is_closed_loop', False)
+                    phase=phase_name
                 )
 
                 stroke_id += 1
@@ -598,14 +591,17 @@ def group_strokes_by_mask(stroke_data: StrokeData) -> List[Dict]:
     for mask_id in sorted(mask_groups.keys()):
         mask_group = mask_groups[mask_id]
 
-        # Add timing and statistics for the entire mask
+        # Add statistics for the entire mask
         total_length = sum(s['length_mm'] for s in mask_group['strokes'])
-        total_duration = sum(s['duration_s'] for s in mask_group['strokes'])
+        stroke_count = len(mask_group['strokes'])
+        
+        # Simple duration estimation based on stroke count
+        estimated_duration = stroke_count * 0.5  # 0.5 seconds per stroke
 
         mask_group.update({
             'total_length_mm': total_length,
-            'total_duration_s': total_duration,
-            'stroke_count': len(mask_group['strokes'])
+            'total_duration_s': estimated_duration,
+            'stroke_count': stroke_count
         })
 
         mask_stroke_arrays.append(mask_group)
@@ -631,12 +627,7 @@ def scale_timing_for_demo(mask_stroke_arrays: List[Dict], speed_scale_factor: fl
         # Scale mask timing
         mask_array['total_duration_s'] /= speed_scale_factor
         
-        # Scale individual stroke timing and speeds
-        for stroke in mask_array['strokes']:
-            stroke['duration_s'] /= speed_scale_factor
-            stroke['speed_mm_s'] *= speed_scale_factor
-            # Clamp speed to reasonable robot limits
-            stroke['speed_mm_s'] = min(stroke['speed_mm_s'], 80.0)  # Max robot speed
+        # Duration scaling removed - not using individual stroke timing
     
     return mask_stroke_arrays
 

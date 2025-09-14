@@ -31,10 +31,9 @@ The main output is a simplified JSON file optimized for narration timing:
           "phase": "boundary",
           "points": [[45.2, 78.9], [46.1, 79.2], [47.0, 79.8]],
           "length_mm": 12.7,
-          "duration_s": 0.85,
           "start_pos": [45.2, 78.9],
           "end_pos": [47.0, 79.8],
-          "speed_mm_s": 15.2
+          "order_index": 0
         }
       ]
     }
@@ -86,9 +85,8 @@ Step 8 now returns strokes grouped by mask for narration timing:
 - **`stroke_id`**: Unique identifier for execution order tracking
 - **`points`**: Array of [x, y] coordinates in millimeters (absolute positioning)
 - **`start_pos`** / **`end_pos`**: Critical for path planning and pen lift decisions
-- **`speed_mm_s`**: Recommended drawing speed based on curvature analysis
-- **`duration_s`**: Expected execution time for this stroke
-- **`is_closed_loop`**: Boolean indicating if stroke forms a closed shape
+- **`length_mm`**: Physical length of the stroke in millimeters
+- **`order_index`**: Original order before optimization
 
 ### Movement Planning
 - **`pen_lifts`**: Array of required pen lift operations between strokes
