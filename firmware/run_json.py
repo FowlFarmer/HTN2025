@@ -6,30 +6,57 @@ import os
 import threading
 import subprocess
 
-# Add the text_to_speech and sentiment_analysis modules to path
+# Add the text_to_speech and cohere-multimodal modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'text_to_speech'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'sentiment_analysis'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'cohere-multimodal'))
+
 from bob_ross_simple_tts import speak_in_bob_ross_voice
-from main import analyze_image_sentiment_from_url
+
+# Import painting profiles system
+try:
+    from painting_profiles import get_narrations_for_painting, get_music_for_painting, painting_manager
+    PAINTING_PROFILES_AVAILABLE = True
+    print("✅ Painting profiles system available!")
+except ImportError as e:
+    print(f"⚠️ Could not import painting profiles: {e}")
+    PAINTING_PROFILES_AVAILABLE = False
+
+# ===== CONFIGURATION: Change this to select different paintings =====
+JSON_FILE = "starry.json"  # Options: starry.json, m3.json, eiffel.json, titanic.json, petronas.json, monalisa.json
+# ================================================================
+
+JSON_PATH = f"painting_vectorization/results/step8_stroke_ordering/{JSON_FILE}"
+
+print(f"🎨 Loading painting data from: {JSON_FILE}")
 
 # Load JSON
-with open("painting_vectorization/results/step8_stroke_ordering/starry.json", "r") as f:
-    data = json.load(f)
+try:
+    with open(JSON_PATH, "r") as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print(f"❌ JSON file not found: {JSON_PATH}")
+    print("Available JSON files should be in painting_vectorization/results/step8_stroke_ordering/")
+    sys.exit(1)
 
 act = DeltaActuator(observe=True)
 
 # Initialize music control
 music_stop_event = threading.Event()
 
-# Analyze the starry night image sentiment and start background music
-print("🎭 Analyzing image sentiment for background music selection...")
-starry_image_path = "painting_vectorization/examples/starrynight.jpg"
+# Get music selection based on painting profile
+print("🎵 Selecting background music based on painting...")
+if PAINTING_PROFILES_AVAILABLE:
+    selected_music_file = get_music_for_painting(JSON_FILE)
+    print(f"🎼 Profile-based music selection: {selected_music_file}")
+else:
+    # Fallback music selection
+    selected_music_file = "Calm and Serenity.mp3"
+    print(f"🎼 Default music selection: {selected_music_file}")
+
+music_file_path = os.path.join(os.path.dirname(__file__), '..', 'music_player', selected_music_file)
+
 try:
-    music_theme = analyze_image_sentiment_from_url(starry_image_path)
-    music_file_path = os.path.join(os.path.dirname(__file__), '..', 'music_player', music_theme.filename)
-    
-    print(f"🎵 Selected music theme: {music_theme.theme_name}")
-    print(f"🎼 Playing background music: {music_theme.filename}")
+    print(f"🎵 Playing background music: {selected_music_file}")
     
     # Start background music in a separate thread with lower volume and looping
     
@@ -68,27 +95,83 @@ except Exception as e:
 
 print("🎨 Starting painting process...")
 
-# Bob Ross narration for the first three masks
-bob_ross_narrations = [
-    "Oh, look at this cheeky little cypress tree! It's flickering like a flame, wanting to draw our attention. Let's appreciate its fiery charm and give it a hug from afar, shall we?",
-    "The sky is doing cartwheels today, with vibrant blue swirls unfolding like a symphony. Let's imagine we're painting with the clouds, adding our own touches to this joyous spectacle.",
-    "Nestled in the quiet of night, this serene village seems to hug its residents to sleep. Let's paint it with gentle, loving strokes, reminding ourselves that quiet moments are just as valuable as louder ones. Consider getting your paint, brushes and palette ready as you relax and enjoy the entire painting process, gently guiding you through each step. Isn't it lovely?"
+# Get Bob Ross narrations based on painting profile
+print("\n🗣️ Selecting Bob Ross narrations based on painting...")
+
+# Hardcoded fallback narrations (for safety)
+fallback_narrations = [
+    "Let's create something beautiful together on our canvas. Every stroke tells a story, and today we're telling yours.",
+    "Remember, there are no mistakes in art, only happy accidents that lead us to unexpected beauty.",
+    "Look how the colors dance together! Each element finds its perfect place in our composition, just like in life."
 ]
+
+# Try to get profile-based narrations
+bob_ross_narrations = fallback_narrations  # Default to fallback
+narration_source = "hardcoded fallback"
+
+if PAINTING_PROFILES_AVAILABLE:
+    try:
+        print(f"🤖 Getting profile-based narrations for {JSON_FILE}...")
+        profile_narrations = get_narrations_for_painting(JSON_FILE, max_count=5)  # Get up to 5 narrations
+        
+        if profile_narrations and len(profile_narrations) >= 3:
+            bob_ross_narrations = profile_narrations
+            narration_source = f"painting profile ({JSON_FILE})"
+            print(f"✅ Using profile-based narrations for {JSON_FILE}!")
+        else:
+            print(f"⚠️ Insufficient profile narrations, using fallback...")
+            
+    except Exception as e:
+        print(f"⚠️ Error getting profile narrations: {e}")
+        print("🔄 Falling back to default narrations...")
+
+print(f"📝 Using {narration_source} narrations")
+
+# Display the narrations that will be used
+print(f"\n--- Bob Ross Narrations for {JSON_FILE} ---")
+for i, narration in enumerate(bob_ross_narrations, 1):
+    preview = narration[:80] + "..." if len(narration) > 80 else narration
+    print(f"{i}. {preview}")
+
+# Show painting profile info if available
+if PAINTING_PROFILES_AVAILABLE:
+    profile = painting_manager.get_profile_by_json(JSON_FILE)
+    if profile:
+        print(f"\n--- Painting Profile: {profile.name} ---")
+        print(f"Music: {profile.music_file}")
+        print(f"Narrations: {len(profile.narrations)} available")
+        if profile.mask_descriptions:
+            print(f"Masks: {len(profile.mask_descriptions)} described")
 
 # Count points
 total_points = 0
 
+# Limit narrations to available masks
+available_masks = len(data.get("mask_stroke_arrays", []))
+narrations_to_use = bob_ross_narrations[:available_masks]
+
+print(f"\n🎭 Found {available_masks} masks, using {len(narrations_to_use)} narrations")
+
 for mask_index, mask in enumerate(data.get("mask_stroke_arrays", [])):
-    # Start Bob Ross narration thread for the first three masks (during drawing)
+    # Start Bob Ross narration thread for available narrations
     narration_thread = None
-    if mask_index < len(bob_ross_narrations):
+    if mask_index < len(narrations_to_use):
         print(f"\n🎨 Mask {mask_index + 1}: Starting to paint while Bob Ross speaks...")
+        
+        # Show which narration is being used
+        narration_text = narrations_to_use[mask_index]
+        preview = narration_text[:100] + "..." if len(narration_text) > 100 else narration_text
+        print(f"🗣️ Narration {mask_index + 1}: {preview}")
+        
         narration_thread = threading.Thread(
             target=speak_in_bob_ross_voice, 
-            args=(bob_ross_narrations[mask_index],)
+            args=(narration_text,)
         )
         narration_thread.daemon = True  # Thread will close when main program exits
         narration_thread.start()
+    else:
+        print(f"\n🎨 Mask {mask_index + 1}: Painting silently (no narration available)")
+    
     for stroke in mask.get("strokes", []):
         down = 0  
         points = stroke.get("points", [])
@@ -127,5 +210,7 @@ music_stop_event.set()
 print("🎵 Stopping background music...")
 
 print("🎨 Painting complete!")
+print(f"📝 Used: {narration_source}")
+print(f"🎵 Music: {selected_music_file}")
 
 act.return_home()
