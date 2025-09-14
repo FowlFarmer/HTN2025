@@ -25,13 +25,15 @@ This folder contains a Bob Ross-themed text-to-speech system with two main compo
 - **Input**: Any text string
 - **Output**: Plays Bob Ross-style audio through speakers
 - **Features**:
-  - Uses macOS "Fred" voice (calm, deep tone similar to Bob Ross)
+  - **Primary**: Uses ElevenLabs TTS with calm voice (JBFqnCBsd6RMkjVDRZzb)
+  - **Fallback**: Uses macOS "Fred" voice if ElevenLabs fails
   - Automatically adds Bob Ross phrases and styling
   - Generates temporary audio file and plays it
   - Cleans up temporary files after playback
   - Returns `True`/`False` for success/failure
+  - Requires ElevenLabs API key in environment variables
 
-**Dependencies**: `os`, `subprocess`, `random`
+**Dependencies**: `os`, `subprocess`, `random`, `elevenlabs`, `python-dotenv`, `tempfile`
 
 ## Usage Examples
 
@@ -54,10 +56,24 @@ speak_in_bob_ross_voice("Today we're painting happy little trees")
 
 ## System Requirements
 - **macOS**: Uses built-in `say` command and `afplay` for audio
-- **Python packages**: `cohere`, `python-dotenv` 
-- **Environment**: `COHERE_API_KEY` environment variable for AI features
+- **Python packages**: `cohere`, `python-dotenv`, `elevenlabs`
+- **Environment Variables**: 
+  - `COHERE_API_KEY` for AI features
+  - `ELEVENLABS_API_KEY` for premium TTS (required for ElevenLabs)
+
+## Environment Setup
+To use ElevenLabs TTS, you **must** set your API key:
+```bash
+export ELEVENLABS_API_KEY="sk_cf566ff12821df1d2ee174f008db3df9d70188d1c3e0e3b6"
+```
+Or add it to your `.env` file:
+```
+ELEVENLABS_API_KEY=sk_cf566ff12821df1d2ee174f008db3df9d70188d1c3e0e3b6
+```
 
 ## Notes
-- The TTS currently uses macOS "Fred" voice, not actual Bob Ross voice
-- For true Bob Ross voice, would need Hugging Face model integration
+- **Primary TTS**: ElevenLabs with calm voice (JBFqnCBsd6RMkjVDRZzb)
+- **Fallback TTS**: macOS "Fred" voice if ElevenLabs fails or unavailable
+- **API Key Required**: ElevenLabs will only work if `ELEVENLABS_API_KEY` is set in environment
 - Both functions work independently and can be used separately
+- Automatic fallback ensures speech always works even if ElevenLabs service is down

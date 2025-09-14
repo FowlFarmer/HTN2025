@@ -44,3 +44,4 @@ typing_extensions==4.15.0
 urllib3==2.5.0
 websockets==15.0.1
 pillow==11.3.0
+elevenlabs>=1.8.0
