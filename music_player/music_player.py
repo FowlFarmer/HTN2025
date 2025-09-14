@@ -1,6 +1,34 @@
 import os
 import pygame
 from pathlib import Path
+from enum import Enum
+
+class MusicTheme(Enum):
+    """Enumeration of available music themes and their corresponding audio files."""
+    AWE_AND_WONDER = ("Awe and Wonder", "Awe and Wonder.mp3")
+    JOY_AND_HAPPINESS = ("Joy and Happiness", "Joyful Sunrise.mp3")
+    MELANCHOLY_AND_SADNESS = ("Melancholy and Sadness", "Melancholy Drift.mp3")
+    EMPATHY_AND_COMPASSION = ("Empathy and Compassion", "Empathy and Compassion.mp3")
+    CALM_AND_SERENITY = ("Calm and Serenity", "Calm and Serenity.mp3")
+    FEAR_AND_UNEASE = ("Fear and Unease", "Fear and Unease.mp3")
+    INSPIRATION_AND_CREATIVITY = ("Inspiration and Creativity", "Inspiration and Creativity.mp3")
+    LOVE_AND_WARMTH = ("Love and Warmth", "Love and Warmth.mp3")
+    CONFUSION_AND_CURIOSITY = ("Confusion and Curiosity", "Confusion and Curiosity.mp3")
+    SPIRITUALITY_AND_TRANSCENDENCE = ("Spirituality and Transcendence", "Spirituality and Transcendence.mp3")
+    
+    def __init__(self, theme_name, filename):
+        self.theme_name = theme_name
+        self.filename = filename
+    
+    @classmethod
+    def get_theme_mapping(cls):
+        """Return a dictionary mapping theme names to filenames."""
+        return {theme.theme_name: theme.filename for theme in cls}
+    
+    @classmethod
+    def get_all_themes(cls):
+        """Return a list of all available theme names."""
+        return [theme.theme_name for theme in cls]
 
 def play_music(prompt):
     """
@@ -15,19 +43,8 @@ def play_music(prompt):
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
     
-    # Theme to filename mapping
-    theme_mapping = {
-        "Awe and Wonder": "Awe and Wonder.mp3",
-        "Joy and Happiness": "Joyful Sunrise.mp3",  # Using closest match
-        "Melancholy and Sadness": "Melancholy Drift.mp3",  # Using closest match
-        "Empathy and Compassion": "Empathy and Compassion.mp3",
-        "Calm and Serenity": "Calm and Serenity.mp3",
-        "Fear and Unease": "Fear and Unease.mp3",
-        "Inspiration and Creativity": "Inspiration and Creativity.mp3",
-        "Love and Warmth": "Love and Warmth.mp3",
-        "Confusion and Curiosity": "Confusion and Curiosity.mp3",
-        "Spirituality and Transcendence": "Spirituality and Transcendence.mp3"
-    }
+    # Get theme to filename mapping from enum
+    theme_mapping = MusicTheme.get_theme_mapping()
     
     if not prompt.strip():
         print("Please enter a prompt")
@@ -82,18 +99,7 @@ def play_music(prompt):
 
 def list_available_themes():
     """List all available music themes."""
-    themes = [
-        "Awe and Wonder",
-        "Joy and Happiness", 
-        "Melancholy and Sadness",
-        "Empathy and Compassion",
-        "Calm and Serenity",
-        "Fear and Unease",
-        "Inspiration and Creativity",
-        "Love and Warmth",
-        "Confusion and Curiosity",
-        "Spirituality and Transcendence"
-    ]
+    themes = MusicTheme.get_all_themes()
     
     print("Available music themes:")
     for i, theme in enumerate(themes, 1):

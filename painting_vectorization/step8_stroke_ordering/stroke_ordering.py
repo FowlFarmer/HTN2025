@@ -22,6 +22,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Union
 import copy
+import sys
+import os
+
+# Add project root to path for constants import
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from constants import (
+    CANVAS_SIZE_MM, CANVAS_WIDTH_MM, CANVAS_HEIGHT_MM,
+    DEMO_DURATION_LIMIT_S, STROKE_DURATION_ESTIMATE_S,
+    ROBOT_CONFIG
+)
 
 class StrokeData:
     """
@@ -31,7 +41,7 @@ class StrokeData:
     to execute the painting on a robotic system.
     """
 
-    def __init__(self, canvas_mm: List[float] = [160.0, 160.0]):
+    def __init__(self, canvas_mm: List[float] = [CANVAS_WIDTH_MM, CANVAS_HEIGHT_MM]):
         self.meta = {
             'canvas_mm': canvas_mm,  # Canvas dimensions in mm
             'scale_mm_per_px': 0.0,  # Will be set from sampling results
@@ -43,9 +53,9 @@ class StrokeData:
             'processing_timestamp': datetime.now().isoformat(),
             'optimization_method': '',
             'speed_profile': {
-                'default_speed_mm_s': 40.0,  # Faster for 2-minute demo
-                'min_speed_mm_s': 25.0,
-                'max_speed_mm_s': 60.0
+                'default_speed_mm_s': ROBOT_CONFIG['default_speed_mm_s'],
+                'min_speed_mm_s': ROBOT_CONFIG['min_speed_mm_s'],
+                'max_speed_mm_s': ROBOT_CONFIG['max_speed_mm_s']
             }
         }
         self.strokes = []
@@ -320,7 +330,7 @@ def solve_tsp_greedy(stroke_positions: List[Tuple[int, List[float]]]) -> List[in
     if len(stroke_positions) <= 1:
         return [pos[0] for pos in stroke_positions]
 
-    canvas_center = [80.0, 80.0]  # Center of 160x160mm canvas
+    canvas_center = [CANVAS_WIDTH_MM/2, CANVAS_HEIGHT_MM/2]  # Center of canvas
     unvisited = set(range(len(stroke_positions)))
     path = []
     current_pos = canvas_center
@@ -383,7 +393,7 @@ def calculate_total_distance(path: List[int], pos_lookup: Dict[int, List[float]]
         return 0.0
 
     total_distance = 0.0
-    canvas_center = [80.0, 80.0]
+    canvas_center = [CANVAS_WIDTH_MM/2, CANVAS_HEIGHT_MM/2]
     current_pos = canvas_center
 
     for stroke_id in path:
@@ -596,7 +606,7 @@ def group_strokes_by_mask(stroke_data: StrokeData) -> List[Dict]:
         stroke_count = len(mask_group['strokes'])
         
         # Simple duration estimation based on stroke count
-        estimated_duration = stroke_count * 0.5  # 0.5 seconds per stroke
+        estimated_duration = stroke_count * STROKE_DURATION_ESTIMATE_S
 
         mask_group.update({
             'total_length_mm': total_length,
@@ -689,8 +699,8 @@ def process_all_stroke_ordering(color_detection_results: Dict, strategy: str = '
         ]
     }
 
-    # Scale timing to fit 2-minute demo if needed
-    demo_duration_limit_s = 120.0  # 2 minutes
+    # Scale timing to fit demo duration if needed
+    demo_duration_limit_s = DEMO_DURATION_LIMIT_S
     if statistics['estimated_duration_s'] > demo_duration_limit_s:
         speed_scale_factor = statistics['estimated_duration_s'] / demo_duration_limit_s
         mask_stroke_arrays = scale_timing_for_demo(mask_stroke_arrays, speed_scale_factor)
