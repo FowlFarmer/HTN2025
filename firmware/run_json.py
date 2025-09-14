@@ -3,6 +3,7 @@ import json
 import time
 import sys
 import os
+import threading
 
 # Add the text_to_speech module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'text_to_speech'))
@@ -25,11 +26,16 @@ bob_ross_narrations = [
 total_points = 0
 
 for mask_index, mask in enumerate(data.get("mask_stroke_arrays", [])):
-    # Speak Bob Ross narration for the first three masks
+    # Start Bob Ross narration thread for the first three masks (during drawing)
+    narration_thread = None
     if mask_index < len(bob_ross_narrations):
-        print(f"\n🎨 Mask {mask_index + 1}: {bob_ross_narrations[mask_index][:50]}...")
-        speak_in_bob_ross_voice(bob_ross_narrations[mask_index])
-        print("🎵 Narration complete, beginning to paint...")
+        print(f"\n🎨 Mask {mask_index + 1}: Starting to paint while Bob Ross speaks...")
+        narration_thread = threading.Thread(
+            target=speak_in_bob_ross_voice, 
+            args=(bob_ross_narrations[mask_index],)
+        )
+        narration_thread.daemon = True  # Thread will close when main program exits
+        narration_thread.start()
     
     for stroke in mask.get("strokes", []):
         points = stroke.get("points", [])
@@ -49,5 +55,11 @@ for mask_index, mask in enumerate(data.get("mask_stroke_arrays", [])):
         #     act.upWarm()
         # elif(stroke.get("warmth_class", int) == 0):
             act.downCold()
+    
+    # Optional: Wait for narration to finish if it's still running
+    # (Comment out if you want narration to continue into next mask)
+    # if narration_thread and narration_thread.is_alive():
+    #     print(f"⏳ Waiting for narration to complete for mask {mask_index + 1}...")
+    #     narration_thread.join()
 
 print(f"Total points consumed: {total_points}")
