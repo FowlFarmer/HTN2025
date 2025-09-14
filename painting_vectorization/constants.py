@@ -17,7 +17,7 @@ Canvas Configuration:
 
 # Physical canvas dimensions in millimeters
 # Change this value to scale the entire system (e.g., 150 for 150x150mm)
-CANVAS_SIZE_MM = 160  # 16cm x 16cm canvas
+CANVAS_SIZE_MM = 130  # 13cm x 13cm canvas
 
 # Derived canvas properties (automatically calculated)
 CANVAS_WIDTH_MM = CANVAS_SIZE_MM
