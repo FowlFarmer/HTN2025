@@ -56,23 +56,20 @@ MIN_SEGMENT_LENGTH_MM = 0.5
 # ROBOT CONFIGURATION
 # =============================================================================
 
-# Robot motion parameters
+# Robot motion parameters (handled by firmware engineer)
 ROBOT_CONFIG = {
-    "default_speed_mm_s": 40.0,
-    "min_speed_mm_s": 25.0,
-    "max_speed_mm_s": 60.0,
     "pen_lift_height_mm": 15.0,
-    "min_travel_distance_mm": 2.0,
-    "acceleration_mm_s2": 500.0
+    "min_travel_distance_mm": 2.0
 }
 
 # =============================================================================
 # DEMO TIMING
 # =============================================================================
 
-# Demo constraints
-DEMO_DURATION_LIMIT_S = 120.0  # 2 minutes
-STROKE_DURATION_ESTIMATE_S = 0.5  # Seconds per stroke for timing estimation
+# Demo constraints (timing handled by firmware engineer)
+# These are kept for reference but not used in calculations
+DEMO_DURATION_LIMIT_S = 120.0  # 2 minutes target
+STROKE_COUNT_ESTIMATE = "handled_by_firmware"  # Timing calculations removed
 
 # =============================================================================
 # FILE PATHS
