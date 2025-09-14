@@ -8,7 +8,6 @@ import os
 import cohere
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 def transform_to_bob_ross_style(object_color_pairs, cohere_api_key=None):
@@ -146,3 +145,12 @@ def add_simple_bob_ross_style_for_pair(obj, color):
     middle = random.choice(bob_ross_middles)
     
     return f"{intro} {color} {obj}. {middle}"
+
+
+if __name__ == "__main__":
+    test_pairs = [("apple", "red"), ("tree", "green"), ("sky", "blue")]
+    descriptions = transform_to_bob_ross_style(test_pairs)
+    
+    print("Generated Bob Ross descriptions:")
+    for i, desc in enumerate(descriptions, 1):
+        print(f"{i}. {desc}")
