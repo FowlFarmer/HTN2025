@@ -72,8 +72,9 @@ def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM, offs
             # Points are already in (x,y) format, just apply offset
             pts_mm = np.column_stack([pts_px[:, 0] + offset[0], pts_px[:, 1] + offset[1]]) * scale_mm_per_px
         
-        # Flip Y-axis to correct orientation (image Y increases downward, we want upward)
-        pts_mm[:, 1] = canvas_height_mm - pts_mm[:, 1]
+        # Keep natural image orientation (Y increases downward from top)
+        # No Y-axis flipping needed for drawing applications
+        # pts_mm[:, 1] = canvas_height_mm - pts_mm[:, 1]  # Commented out to fix upside-down issue
     else:
         pts_mm = pts_px * scale_mm_per_px
     
