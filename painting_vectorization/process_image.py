@@ -22,6 +22,7 @@ from datetime import datetime
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
+from constants import CANVAS_SIZE_MM
 from step1_preprocessing.image_preprocessing import preprocess_image
 from step2_segmentation.segmentation import segment_painting, save_segmentation_results
 from step3_edge_extraction.edge_extraction import process_all_masks, save_edge_results
@@ -368,7 +369,7 @@ def process_painting_pipeline(image_path, outline_only=True):
         step6_start = datetime.now()
 
         sampling_results = process_all_sampling(vectorized_results, stroke_graph_results, processed_img.shape,
-                                              spacing_mm=1.0, canvas_width_mm=160)
+                                              spacing_mm=1.0, canvas_width_mm=CANVAS_SIZE_MM)
 
         step6_time = (datetime.now() - step6_start).total_seconds()
 
