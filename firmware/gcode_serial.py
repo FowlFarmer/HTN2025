@@ -6,7 +6,7 @@ import threading # add commands to buffer and it will send them in order in back
 import queue
 
 class GRBLController:
-    def __init__(self, pattern="usbserial", baud=115200, timeout=1):
+    def __init__(self, pattern="usb", baud=115200, timeout=1):
         self._pattern = pattern
         self._baud = baud
         self._timeout = timeout
@@ -75,6 +75,10 @@ class GRBLController:
         self.wait_for_ok()
         self._ser.write(b"G92 X0 Y0\n")  # home axis
         self.wait_for_ok()
+    
+        self._ser.write(b"1 0\n")  # servo 1 zero position
+        self._ser.write(b"2 0\n")  # servo 1 zero position
+
         self._t = threading.Thread(target=self._command_sender, daemon=True)
         self._t.start()
         
