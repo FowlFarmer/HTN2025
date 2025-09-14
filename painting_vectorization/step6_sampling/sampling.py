@@ -17,8 +17,12 @@ import cv2
 import numpy as np
 from datetime import datetime
 from pathlib import Path
+import sys
+import os
 
-CANVAS_SIZE_MM = 160  # 16cm x 16cm canvas
+# Add project root to path for constants import
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from constants import CANVAS_SIZE_MM, CANVAS_WIDTH_MM, CANVAS_HEIGHT_MM
 
 def calculate_scale_factor(image_width_px, canvas_width_mm=CANVAS_SIZE_MM):
     """
@@ -33,23 +37,36 @@ def calculate_scale_factor(image_width_px, canvas_width_mm=CANVAS_SIZE_MM):
     """
     return canvas_width_mm / image_width_px
 
-def convert_to_mm(pts_px, scale_mm_per_px):
+def convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm=CANVAS_SIZE_MM):
     """
-    Convert pixel coordinates to millimeters
+    Convert pixel coordinates to millimeters with coordinate system flip
+    
+    Converts from pixel coordinates (0,0 at top-left, Y increases downward)
+    to millimeter coordinates (0,0 at top-left, Y increases downward)
 
     Args:
         pts_px: numpy.ndarray - Points in pixel coordinates
         scale_mm_per_px: float - Scale factor from calculate_scale_factor
+        canvas_height_mm: float - Canvas height for coordinate system
 
     Returns:
-        numpy.ndarray: Points in millimeter coordinates
+        numpy.ndarray: Points in millimeter coordinates (0,0 at top-left)
     """
     if len(pts_px) == 0:
         return pts_px
 
-    return pts_px * scale_mm_per_px
+    # Convert to mm
+    pts_mm = pts_px * scale_mm_per_px
+    
+    # Flip Y-axis so (0,0) is at top-left instead of bottom-left
+    # Original system: (0,0) bottom-left, Y increases upward
+    # New system: (0,0) top-left, Y increases downward
+    if len(pts_mm.shape) == 2 and pts_mm.shape[1] >= 2:
+        pts_mm[:, 1] = canvas_height_mm - pts_mm[:, 1]
+    
+    return pts_mm
 
-def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0):
+def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0, canvas_height_mm=CANVAS_SIZE_MM):
     """
     Resample polyline with uniform spacing in millimeters
 
@@ -57,15 +74,16 @@ def resample_polyline_mm(pts_px, scale_mm_per_px, spacing_mm=1.0):
         pts_px: numpy.ndarray - Points in pixel coordinates
         scale_mm_per_px: float - Scale factor
         spacing_mm: float - Desired spacing between points in mm
+        canvas_height_mm: float - Canvas height for coordinate conversion
 
     Returns:
         numpy.ndarray: Uniformly spaced points in mm coordinates
     """
     if len(pts_px) < 2:
-        return convert_to_mm(pts_px, scale_mm_per_px)
+        return convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm)
 
-    # Convert to mm
-    pts_mm = pts_px * scale_mm_per_px
+    # Convert to mm with coordinate flip
+    pts_mm = convert_to_mm(pts_px, scale_mm_per_px, canvas_height_mm)
 
     # Calculate cumulative distances
     deltas = np.linalg.norm(np.diff(pts_mm, axis=0), axis=1)
@@ -230,7 +248,7 @@ def sample_stroke_sequence(stroke_result, scale_mm_per_px, spacing_mm=1.0, min_l
 
     try:
         # Resample with uniform spacing
-        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm)
+        sampled_pts_mm = resample_polyline_mm(vectorized_points, scale_mm_per_px, spacing_mm, CANVAS_SIZE_MM)
 
         # Handle short segments
         sampled_pts_mm = handle_short_segments(sampled_pts_mm, min_length_mm)
