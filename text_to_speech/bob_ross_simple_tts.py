@@ -162,44 +162,20 @@ def add_bob_ross_style(text):
     Returns:
         str: Text with Bob Ross style additions
     """
-    # Add some Bob Ross flair
     bob_ross_intro = "Hello there, my friend. "
     bob_ross_outro = " Just like painting a happy little tree, we've created something beautiful together."
     
     return f"{bob_ross_intro}{text}{bob_ross_outro}"
 
-def main():
-    """Main function to demonstrate Bob Ross TTS."""
-    print("🎨" + "=" * 48 + "🎨")
-    print("   Bob Ross Text-to-Speech System")
-    print("   'Let's turn words into happy little sounds'")
-    print("🎨" + "=" * 48 + "🎨")
-    
-    # Initialize the TTS system
-    bob_ross_tts = BobRossTTS()
-    
-    # Read text from test.txt
+'''
+Test usage:
+
+bob_ross_tts = BobRossTTS()
     text_file_path = "test.txt"
     text_content = read_text_file(text_file_path)
     
     if text_content:
         print(f"\n📖 Text from {text_file_path}: '{text_content}'")
-        
-        # Add Bob Ross style to the text
         styled_text = add_bob_ross_style(text_content)
-        print(f"🎨 Bob Ross styled text: '{styled_text}'")
-        
-        print("\n🎙️  Generating Bob Ross voice...")
-        
-        # Convert text to speech and play
         bob_ross_tts.text_to_speech_and_play(styled_text)
-    else:
-        print("❌ No text found to convert to speech.")
-        
-        # Demo with default text
-        demo_text = "Hello there, my friend. I am an artist, and today we're going to paint some happy little trees together."
-        print(f"\n🎨 Using demo text: '{demo_text}'")
-        bob_ross_tts.text_to_speech_and_play(demo_text)
-
-if __name__ == "__main__":
-    main()
+'''
