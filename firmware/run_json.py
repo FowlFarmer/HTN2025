@@ -18,6 +18,9 @@ with open("painting_vectorization/results/step8_stroke_ordering/starry.json", "r
 
 act = DeltaActuator(observe=True)
 
+# Initialize music control
+music_stop_event = threading.Event()
+
 # Analyze the starry night image sentiment and start background music
 print("🎭 Analyzing image sentiment for background music selection...")
 starry_image_path = "painting_vectorization/examples/starrynight.jpg"
@@ -28,15 +31,32 @@ try:
     print(f"🎵 Selected music theme: {music_theme.theme_name}")
     print(f"🎼 Playing background music: {music_theme.filename}")
     
-    # Start background music in a separate thread
+    # Start background music in a separate thread with lower volume and looping
+    
     def play_background_music():
         try:
-            # Use afplay to play the music file (macOS)
-            subprocess.run(['afplay', music_file_path], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Could not play background music: {e}")
+            while not music_stop_event.is_set():
+                # Use afplay with volume control (macOS) - volume range is 0.0 to 1.0
+                # We'll use a lower volume (0.3) for background music
+                process = subprocess.Popen([
+                    'afplay', music_file_path, '-v', '0.3'
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                # Wait for the music to finish or stop event
+                while process.poll() is None and not music_stop_event.is_set():
+                    time.sleep(0.1)
+                
+                # If stop event is set, terminate the process
+                if music_stop_event.is_set():
+                    process.terminate()
+                    break
+                    
+                print("🔄 Looping background music...")
+                
         except FileNotFoundError:
             print(f"Warning: Music file not found: {music_file_path}")
+        except Exception as e:
+            print(f"Warning: Could not play background music: {e}")
     
     music_thread = threading.Thread(target=play_background_music)
     music_thread.daemon = True  # Thread will close when main program exits
@@ -89,10 +109,16 @@ for mask_index, mask in enumerate(data.get("mask_stroke_arrays", [])):
         # elif(stroke.get("warmth_class", int) == 0):
             act.downCold()
     
-    # Optional: Wait for narration to finish if it's still running
-    # (Comment out if you want narration to continue into next mask)
-    # if narration_thread and narration_thread.is_alive():
-    #     print(f"⏳ Waiting for narration to complete for mask {mask_index + 1}...")
-    #     narration_thread.join()
+    # Wait for narration to finish before moving to next mask
+    if narration_thread and narration_thread.is_alive():
+        print(f"⏳ Waiting for narration to complete for mask {mask_index + 1}...")
+        narration_thread.join()
+        print(f"✅ Narration complete for mask {mask_index + 1}")
 
 print(f"Total points consumed: {total_points}")
+
+# Stop background music when painting is complete
+music_stop_event.set()
+print("🎵 Stopping background music...")
+
+print("🎨 Painting complete!")
