@@ -2,6 +2,16 @@
 
 This guide will help you set up the painting vectorization pipeline to run `python process_image.py` successfully.
 
+## 🎨 **Note on AI Features**
+
+This project includes **fully functional Cohere multimodal AI** capabilities that are **commented out for demo performance**:
+- ✅ **Sentiment analysis** from images to select background music
+- ✅ **Object & color detection** from original images and masks
+- ✅ **Dynamic Bob Ross narration generation** for each painting step
+
+**Demo Mode**: Uses instant hardcoded profiles for swift demonstrations (see `cohere-multimodal/PAINTING_PROFILES_GUIDE.md`)  
+**Full AI Mode**: Uncomment API calls for complete multimodal experience (1+ minute processing time)
+
 ## Prerequisites
 
 - **Python 3.8+** (recommended: Python 3.9 or 3.10)

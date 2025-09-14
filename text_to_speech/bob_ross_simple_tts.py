@@ -140,37 +140,14 @@ def _fallback_macos_tts(text):
 
 def _add_bob_ross_style(text):
     """
-    Add Bob Ross-style phrases to make the speech more characteristic.
+    Add minimal Bob Ross-style introduction to the text.
+    Keeps it simple for sequential narrations.
     
     Args:
         text (str): Original text
         
     Returns:
-        str: Text with Bob Ross style additions
+        str: Text with simple Bob Ross greeting
     """
-    bob_ross_intros = [
-        "Hello there, my friend.",
-        "Well hello there, happy painter.",
-        "Let's take our time with this.",
-        "Now, isn't this just wonderful?"
-    ]
-    
-    bob_ross_transitions = [
-        "Just like painting a happy little tree,",
-        "You know, there are no mistakes, only happy accidents, and",
-        "Let's add some joy to this moment as",
-        "With gentle brushstrokes of words,"
-    ]
-    
-    bob_ross_outros = [
-        "Just like that, we've created something beautiful together.",
-        "Isn't that just delightful? Until next time, happy painting!",
-        "There we go, another happy little moment shared.",
-        "And remember, you have the power to create beauty wherever you go."
-    ]
-    
-    intro = random.choice(bob_ross_intros)
-    transition = random.choice(bob_ross_transitions)
-    outro = random.choice(bob_ross_outros)
-    
-    return f"{intro} {transition} {text} {outro}"
+    # Simple, consistent greeting for sequential narrations
+    return f"Now, {text.lower()}"

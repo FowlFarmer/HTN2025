@@ -41,9 +41,9 @@ class PaintingProfileManager:
         
         # STARRY NIGHT PROFILE
         starry_narrations = [
-            "Oh, look at this cheeky little cypress tree! It's flickering like a flame, wanting to draw our attention. Let's appreciate its fiery charm and give it a hug from afar, shall we?",
-            "The sky is doing cartwheels today, with vibrant blue swirls unfolding like a symphony. Let's imagine we're painting with the clouds, adding our own touches to this joyous spectacle.",
-            "Nestled in the quiet of night, this serene village seems to hug its residents to sleep. Let's paint it with gentle, loving strokes, reminding ourselves that quiet moments are just as valuable as louder ones. Consider getting your paint, brushes and palette ready as you relax and enjoy the entire painting process, gently guiding you through each step. Isn't it lovely?"
+            "We start with this magnificent cypress tree reaching toward the stars.",
+            "Now we add the swirling night sky with its dancing blue winds.",
+            "Finally, we paint the peaceful village resting below."
         ]
         
         starry_masks = [
@@ -62,10 +62,10 @@ class PaintingProfileManager:
         
         # M3 BUILDING PROFILE
         m3_narrations = [
-            "Look at this magnificent blue glass building reaching toward the sky! Each panel catches the light like a happy little window to the world. The blue reminds me of a calm lake reflecting the heavens above.",
-            "Now we're adding some lovely brown concrete support structures. These aren't just boring old concrete - they're the strong, steady foundation that holds our beautiful creation together. Like the trunk of a mighty oak tree, they give our building character and strength.",
-            "Here comes a cheerful green tree to soften our urban landscape! Trees are nature's way of saying 'hello' to the city. This little fellow brings life and freshness to our architectural symphony, reminding us that creativity and nature can dance together beautifully.",
-            "Finally, we're painting this elegant dark blue bridge connecting our spaces. Bridges are wonderful things - they bring people together, just like how art brings us all together in this moment. This deep blue creates a lovely contrast with our lighter elements, adding depth and harmony to our composition."
+            "We begin with the main blue glass building structure.",
+            "Next we add the brown concrete support framework.", 
+            "Now we paint a beautiful green tree for natural contrast.",
+            "Finally we complete the dark blue bridge connection."
         ]
         
         m3_masks = [
@@ -85,8 +85,8 @@ class PaintingProfileManager:
         
         # EIFFEL TOWER PROFILE
         eiffel_narrations = [
-            "Ah, look at this magnificent golden frame reaching toward the heavens! The Eiffel Tower's outer structure shines like a beacon of love and romance, each beam carefully crafted to capture the warm Parisian sunlight. It's like painting with liquid gold, isn't it wonderful?",
-            "Now we're adding the beautiful inner curves with darker gold tones. These aren't just structural elements - they're the tower's gentle embrace, creating intimate spaces within this iron lady's heart. See how the deeper gold creates depth and mystery, like the warm shadows of a loving embrace on a perfect evening in Paris."
+            "We start with the golden outer frame of this iconic tower.",
+            "Now we add the darker gold inner curves and details."
         ]
         
         eiffel_masks = [
@@ -104,9 +104,9 @@ class PaintingProfileManager:
         
         # TITANIC PROFILE
         titanic_narrations = [
-            "Here we see this magnificent vessel in her final moments, painted in deep metallic black that reflects both the moonlight and the gravity of this historical moment. Even in tragedy, there's a certain dignity to this great ship - she was built with love and craftsmanship, and we paint her with that same respect and reverence.",
-            "Now we're adding the proud bow section, still reaching forward with determination even as fate calls her name. See how the metallic black gives weight and substance to this part of the ship? It's a reminder that even in our darkest hours, we can find strength and beauty in the way we face our challenges.",
-            "Finally, we paint the surface of the ship as she meets the cold Atlantic waters. The metallic black creates a solemn contrast with the dark sea, showing us that sometimes our most profound moments come when we're tested by forces beyond our control. But remember, even in this scene, we're creating something meaningful together - there are no accidents, only lessons painted with gentle understanding."
+            "We begin with the main hull of this historic vessel.",
+            "Next we paint the proud bow section reaching forward.",
+            "Finally we add the ship's surface meeting the Atlantic waters."
         ]
         
         titanic_masks = [
@@ -125,9 +125,9 @@ class PaintingProfileManager:
         
         # PETRONAS TOWERS PROFILE
         petronas_narrations = [
-            "Look at this magnificent left tower reaching toward the heavens! Painted in gleaming silver, it stands like a proud sentinel of modern achievement and architectural wonder. Each silver panel catches the Malaysian sunlight, creating a symphony of light that reminds us how human creativity can touch the sky itself. Isn't it just breathtaking?",
-            "Now we're adding the equally stunning right tower, also dressed in that beautiful silver finish. See how these twin towers dance together in perfect harmony? They're not just buildings - they're a celebration of partnership and shared dreams reaching toward the clouds. The silver gives them such elegance and grace, like two gentle giants watching over their city.",
-            "Finally, we paint the extension on the left side of the left tower, completing our silver architectural family. This additional element adds depth and character to our composition, showing us that even in grand designs, there's always room for thoughtful details. Together, these silver structures create a masterpiece of human ambition painted with respect and wonder."
+            "We start with the magnificent left tower in gleaming silver.",
+            "Now we add the equally stunning right tower beside it.",
+            "Finally we complete the extension on the left side."
         ]
         
         petronas_masks = [
@@ -146,9 +146,9 @@ class PaintingProfileManager:
         
         # MONA LISA PROFILE
         monalisa_narrations = [
-            "Here we begin with the elegant silhouette of our mysterious lady, painted in a rich dark dress that speaks of Renaissance sophistication. See how the dark tones create such beautiful contrast and depth? This isn't just fabric - it's the foundation of one of history's most beloved portraits, and we're painting it with the same love and attention that made her famous.",
-            "Now let's add the dreamy water body in the background, painted in those soft, mysterious blues. These aren't just any waters - they're the misty landscapes of Leonardo's imagination, creating an ethereal backdrop that makes our lady seem to float between reality and dreams. The blue gives such peaceful serenity to our composition, doesn't it?",
-            "Finally, we paint her luminous face and graceful neck in gentle whites and soft tones. This is where the magic happens - that enigmatic smile, those knowing eyes that have captivated viewers for centuries. We're not just painting skin, we're capturing the essence of human mystery and beauty. Every brushstroke here tells the story of artistic mastery and timeless elegance."
+            "We begin with the elegant dark dress of our mysterious lady.",
+            "Next we add the dreamy blue water body in the background.",
+            "Finally we paint her luminous face with that famous smile."
         ]
         
         monalisa_masks = [
@@ -217,9 +217,9 @@ class PaintingProfileManager:
     def _get_default_narrations(self, max_count=None):
         """Get default narrations when no profile is found."""
         default_narrations = [
-            "Let's create something beautiful together on our canvas. Every stroke tells a story, and today we're telling yours.",
-            "Remember, there are no mistakes in art, only happy accidents that lead us to unexpected beauty.",
-            "Look how the colors dance together! Each element finds its perfect place in our composition, just like in life."
+            "We start by creating the first layer of our painting.",
+            "Now we add the next section with careful strokes.",
+            "Finally we complete our artistic composition together."
         ]
         
         if max_count is None:

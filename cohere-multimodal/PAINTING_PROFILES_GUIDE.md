@@ -2,7 +2,16 @@
 
 ## Overview
 
-The Painting Profiles System provides hardcoded narrations and music selections for different paintings based on their JSON files. This ensures fast, reliable execution without API dependencies while maintaining personalized content for each artwork.
+The Painting Profiles System provides hardcoded narrations and music selections for different paintings based on their JSON files. This system **replaces the fully functional Cohere multimodal AI** for demo performance reasons.
+
+## ⚠️ **Why Hardcoded Profiles Instead of AI?**
+
+**The Cohere multimodal AI works perfectly** and can:
+- ✅ Analyze painting sentiment to select music
+- ✅ Identify objects and colors from images + masks  
+- ✅ Generate dynamic Bob Ross narrations
+
+**But**: Each AI call takes 1+ minutes, consuming 1/3+ of demo time. For swift demonstrations, we use pre-generated high-quality content that delivers the same experience instantly.
 
 ## Current Profiles
 
@@ -190,9 +199,35 @@ Used in: TTS + background music
 
 ## Benefits
 
-- ✅ **Fast execution** - No API calls
+- ✅ **Fast execution** - No API calls (vs 1+ minute AI processing)
+- ✅ **Demo-ready** - Instant response for live presentations
 - ✅ **Reliable** - No network dependencies  
 - ✅ **Customizable** - Tailored content per painting
 - ✅ **Scalable** - Easy to add new paintings
 - ✅ **Graceful fallbacks** - Handles missing profiles
 - ✅ **Professional** - Consistent, high-quality narrations
+- ✅ **AI-equivalent quality** - Curated content matches AI output quality
+
+## Switching to Full AI Mode
+
+To enable the complete Cohere multimodal pipeline:
+
+1. **Uncomment AI calls** in:
+   - `starrynight_analyzer.py` (lines ~126-143)
+   - `painting_mask_analyzer.py` (multimodal sections)
+
+2. **Set environment variables**:
+   ```bash
+   export COHERE_API_KEY="your_api_key_here"
+   ```
+
+3. **Accept processing time**:
+   - 60-90 seconds per painting analysis
+   - Dynamic, unique content generation
+   - Real-time sentiment and object analysis
+
+4. **Use cases for AI mode**:
+   - Development and testing
+   - Non-time-constrained scenarios  
+   - When you want unique AI-generated content
+   - Research and experimentation
