@@ -19,6 +19,8 @@ Built for **Hack the North 2025**, this project transforms any digital painting 
 6. [Tech Stack](#6-tech-stack)
 7. [Entry Points & How to Run](#7-entry-points--how-to-run)
 
+> **Deep dive:** See [MATH_AND_STROKES.md](./MATH_AND_STROKES.md) for a full mathematical explanation of every formula used in the pipeline and a thorough description of what a stroke is at each stage.
+
 ---
 
 ## 1. What the Project Does
